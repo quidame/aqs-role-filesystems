@@ -63,6 +63,6 @@ filesystems__fstype: ext4
 #filesystems__owner:     OMIT
 #filesystems__selevel:   OMIT
 #filesystems__serole:    OMIT
-##filesystems__setype:   OMIT
+#filesystems__setype:    OMIT
 #filesystems__seuser:    OMIT
 
