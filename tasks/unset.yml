@@ -5,5 +5,92 @@
 # Tasks to unset filesystems.
 # Each task should be clearly named, with no inventory variable in the name.
 
-- name: fail unconditionally
-  fail:
+
+# Some services may still write or read into files, or a user may stay
+# somewhere into the tree, making the mountpoint busy and leading the
+# umount command to fail. Killing all processes accessing the filesystem
+# is the way.
+- name: "kill remaining processes accessing filesystems"
+  command: |
+    fuser --kill \
+    -{{ 'KILL' if fs.force|default(filesystems__force|default(False))|bool else 'TERM' }} \
+    --ismountpoint {{ fs.path }}
+  loop: "{{ filesystems__list }}"
+  loop_control:
+    loop_var: fs
+  register: kill
+  changed_when: kill.rc == 0
+  failed_when: kill.rc > 1
+
+
+- name: "unmount Filesystems"
+  mount:
+    path: "{{ fs.path }}"
+    state: unmounted
+  loop: "{{ filesystems__list }}"
+  loop_control:
+    loop_var: fs
+  notify:
+    - regather_facts
+    - reload_systemd
+
+
+- name: "remove entries in fstab"
+  mount:
+    path: "{{ fs.path }}"
+    state: absent
+  loop: "{{ filesystems__list }}"
+  loop_control:
+    loop_var: fs
+  notify:
+    - reload_systemd
+
+
+# Reload Systemd, so mount units are up to date after changes in /proc/mounts
+# and/or /etc/fstab.
+- meta: flush_handlers
+
+
+# This avoids to get an already configured filesystem on a new LV starting at
+# the same offset on the disk than an old one.
+- name: "get devices stat list"
+  stat:
+    follow: yes
+    get_attributes: no
+    get_checksum: no
+    get_mime: no
+    path: "/dev/{{ fs.vg | default(filesystems__vg) }}/{{ fs.lv }}"
+  loop: "{{ filesystems__list }}"
+  loop_control:
+    loop_var: fs
+  register: devices
+
+
+- name: "wipe Filesystem signatures"
+  command: "wipefs --all {{ fs }}"
+  loop: "{{ wipefs_list }}"
+  loop_control:
+    loop_var: fs
+  regiter: wipefs
+  changed_when: wipefs.rc == 0
+  failed_when: wipefs.rc > 1
+  vars:
+    wipefs_list: |
+      [
+        {% for dev in devices.results if dev.stat.exists and dev.stat.isblk %}
+        "{{ dev.stat.path }}"{{ '' if loop.last else ',' }}{% endfor %}
+      ]
+
+
+# At this step, we can force the removal of the LV without risk.
+- name: "remove Logical Volumes"
+  lvol:
+    lv: "{{ fs.lv }}"
+    vg: "{{ fs.vg | default(filesystems__vg) }}"
+    state: absent
+    force: yes
+  loop: "{{ filesystems__list }}"
+  loop_control:
+    loop_var: fs
+  notify:
+    - regather_facts

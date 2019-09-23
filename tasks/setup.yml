@@ -5,5 +5,87 @@
 # Tasks to setup filesystems.
 # Each task should be clearly named, with no inventory variable in the name.
 
-- name: fail unconditionally
-  fail:
+
+# Only one parameter is mandatory, the LV name. Others are either omited if
+# possible, or provided with a default value.
+- name: "create Logical Volumes"
+  lvol:
+    lv:       "{{ lv.lv }}"
+    vg:       "{{ lv.vg        | default(filesystems__vg) }}"
+    size:     "{{ lv.size      | default(filesystems__size) }}"
+    active:   "{{ lv.active    | default(filesystems__active    | default(omit)) }}"
+    force:    "{{ lv.force     | default(filesystems__force     | default(omit)) }}"
+    opts:     "{{ lv.lvol_opts | default(filesystems__lvol_opts | default(omit)) }}"
+    pvs:      "{{ lv.pvs       | default(filesystems__pvs       | default(omit)) }}"
+    resizefs: "{{ lv.resizefs  | default(filesystems__resizefs  | default(omit)) }}"
+    shrink:   "{{ lv.shrink    | default(filesystems__shrink    | default(omit)) }}"
+    state: present
+  loop: "{{ filesystems__list }}"
+  loop_control:
+    loop_var: lv
+  notify:
+    - regather_facts
+
+
+# Again, there is only one mandatory parameter, that is the same as above. We
+# use /dev/VG/LV path scheme here, because simpler than /dev/mapper/VG-LV.
+- name: "create Filesystems"
+  filesystem:
+    dev:      "/dev/{{ fs.vg   | default(filesystems__vg) }}/{{ fs.lv }}"
+    fstype:   "{{ fs.fstype    | default(filesystems__fstype) }}"
+    force:    "{{ fs.force     | default(filesystems__force     | default(omit)) }}"
+    opts:     "{{ fs.mkfs_opts | default(filesystems__mkfs_opts | default(omit)) }}"
+    resizefs: "{{ fs.resizefs  | default(filesystems__resizefs  | default(omit)) }}"
+  loop: "{{ filesystems__list }}"
+  loop_control:
+    loop_var: fs
+  notify:
+    - regather_facts
+
+
+# This task introduces a new mandatory parameter, that is the absolute path of
+# the mountpoint. THe third parameter that is mandatory for the module is given
+# a default value by the role. We use /dev/mapper/VG-LV path scheme here because
+# of kernel compliance: this is always this path scheme that is exposed by the
+# kernel in /proc/mounts, so it should be considered canonical to populate fstab
+- name: "mount Filesystems"
+  mount:
+    path:   "{{ fs.path }}"
+    src:    "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}"
+    fstype: "{{ fs.fstype    | default(filesystems__fstype) }}"
+    backup: "{{ fs.backup    | default(filesystems__backup    | default(omit)) }}"
+    boot:   "{{ fs.boot      | default(filesystems__boot      | default(omit)) }}"
+    dump:   "{{ fs.dump      | default(filesystems__dump      | default(omit)) }}"
+    opts:   "{{ fs.mountopts | default(filesystems__mountopts | default(omit)) }}"
+    passno: "{{ fs.passno    | default(filesystems__passno    | default(omit)) }}"
+    state: mounted
+  loop: "{{ filesystems__list }}"
+  loop_control:
+    loop_var: fs
+  notify:
+  notify:
+    - regather_facts
+    - reload_systemd
+
+
+# Reload Systemd, so mount units are up to date after changes in /proc/mounts
+# and/or /etc/fstab.
+- meta: flush_handlers
+
+
+# Again, we just reuse the same mandatory parameter as above.
+- name: "update access permissions to the roots of Filesystems"
+  file:
+    path:    "{{ dir.path }}"
+    attr:    "{{ dir.attr    | default(filesystems__attr    | default(omit)) }}"
+    mode:    "{{ dir.mode    | default(filesystems__mode    | default(omit)) }}"
+    owner:   "{{ dir.owner   | default(filesystems__owner   | default(omit)) }}"
+    group:   "{{ dir.group   | default(filesystems__group   | default(omit)) }}"
+    selevel: "{{ dir.selevel | default(filesystems__selevel | default(omit)) }}"
+    serole:  "{{ dir.serole  | default(filesystems__serole  | default(omit)) }}"
+    setype:  "{{ dir.setype  | default(filesystems__setype  | default(omit)) }}"
+    seuser:  "{{ dir.seuser  | default(filesystems__seuser  | default(omit)) }}"
+    state: directory
+  loop: "{{ filesystems__list }}"
+  loop_control:
+    loop_var: dir

@@ -19,7 +19,50 @@
 #
 # Define the main behaviour of the role. Valid values are 'setup' (the default)
 # and 'unset'.  Depending of the role scope, this may be understood as install/
-# uninstall, configure/unconfigure, start/stop, present/absent, create/remove,
-# and so on.
+# uninstall, configure/unconfigure, start/stop, present/absent, create/destroy,
+# add/remove, and so on.
 #
-#filesystems__action: setup
+filesystems__action: setup
+
+################################################################################
+## filesystems__list
+#
+# Define the list of filesystems to setup through a list of dictionnaries, with
+# variables matching parameters of ansible modules: lvol, filesystem, mount and
+# file, except the 'opts' parameter, that is common to the three modules, but
+# with a non-sharable value.
+#
+filesystems__list: []
+
+
+################################################################################
+## filesystems__*
+#
+# These are the default values, that are applicable to any FS to setup, if not
+# overridden by the same variables or per-fs in filesystems__list.
+#
+filesystems__vg: data_vg
+filesystems__size: 512M
+filesystems__mode: 0755
+filesystems__fstype: ext4
+#filesystems__force:     OMIT
+#filesystems__resisefs:  OMIT
+#filesystems__active:    OMIT
+#filesystems__lvol_opts: OMIT
+#filesystems__pvs:       OMIT
+#filesystems__shrink:    OMIT
+#filesystems__mkfs_opts: OMIT
+#filesystems__backup:    OMIT
+#filesystems__boot:      OMIT
+#filesystems__dump:      OMIT
+#filesystems__mountopts: OMIT
+#filesystems__passno:    OMIT
+#filesystems__attr:      OMIT
+#filesystems__group:     OMIT
+#filesystems__mode:      OMIT
+#filesystems__owner:     OMIT
+#filesystems__selevel:   OMIT
+#filesystems__serole:    OMIT
+##filesystems__setype:   OMIT
+#filesystems__seuser:    OMIT
+

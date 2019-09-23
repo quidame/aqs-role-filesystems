@@ -6,11 +6,14 @@
 # i.e. when other roles have been played too.  Notified handlers may be played
 # anytime with:
 # - meta: flush_handlers.
-#
-#- name: restart filesystems service
-#  systemd:
-#    name: filesystems
-#    daemon_reload: yes
-#    enabled: yes
-#    state: restarted
-#  listen: filesystems__restart
+
+- name: "update Systemd mount units"
+  systemd:
+    daemon_reload: yes
+  listen:
+    - reload_systemd
+
+- name: "force ansible to regather facts"
+  setup:
+  listen:
+    - regather_facts
