@@ -1,0 +1,7 @@
+---
+# role: filesystems
+# file: tasks/main.yml
+
+- include_tasks: "{{ filesystems__action | default('setup') }}.yml"
+  tags:
+    - "aqs::filesystems"

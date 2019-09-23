@@ -1,0 +1,4 @@
+# role: filesystems
+# file: tests/inventory
+
+localhost       ansible_connection=local

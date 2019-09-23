@@ -1,0 +1,8 @@
+---
+- hosts: tests
+  roles:
+    - role: filesystems
+      filesystems__action: setup
+
+    - role: filesystems
+      filesystems__action: unset

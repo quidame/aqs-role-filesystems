@@ -1,0 +1,9 @@
+---
+# role: filesystems
+# file: vars/main.yml
+#
+# Variables defined here can't be overridden from anywhere, as this file has
+# a high precedence/priority/weight.  You probably want to let it empty.
+#
+# These variables, if any, must follow the same naming rules than defined in
+# defaults/main.yml.

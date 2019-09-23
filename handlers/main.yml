@@ -1,0 +1,16 @@
+---
+# role: filesystems
+# file: handlers/main.yml
+#
+# This file should contain tasks that will be played at the end of the play,
+# i.e. when other roles have been played too.  Notified handlers may be played
+# anytime with:
+# - meta: flush_handlers.
+#
+#- name: restart filesystems service
+#  systemd:
+#    name: filesystems
+#    daemon_reload: yes
+#    enabled: yes
+#    state: restarted
+#  listen: filesystems__restart

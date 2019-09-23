@@ -1,0 +1,7 @@
+# role: filesystems
+# file: tests/requirements.yml
+---
+- name: "filesystems"
+  src: "https://github.com/quidame/aqs-role-filesystems.git"
+  scm: "git"
+  version: "devel"

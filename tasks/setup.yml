@@ -1,0 +1,9 @@
+---
+# role: filesystems
+# file: tasks/setup.yml
+#
+# Tasks to setup filesystems.
+# Each task should be clearly named, with no inventory variable in the name.
+
+- name: fail unconditionally
+  fail:

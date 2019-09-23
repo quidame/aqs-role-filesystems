@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  author: quidame
+  license: GPLv3
+
+  min_ansible_version: 2.8
+
+  platforms:
+  - name: Debian
+    versions:
+    - 10
+
+  categories: []
+
+  galaxy_tags:
+  - aqs::filesystems
+  - setup
+  - unset
+
+dependencies: []
