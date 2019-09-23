@@ -4,7 +4,7 @@ Ansible role to setup or unset filesystems, as well as their underlying Logical
 Volumes.
 
 This role is a piece of (*yet another*)
-[Ansible Quick Starter](https://github.com/quidame/aqs-common) (**AQS**).
+[Ansible Quick Starter](/aqs-common) (**AQS**).
 
 ## Requirements
 
