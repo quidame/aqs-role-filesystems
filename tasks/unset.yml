@@ -52,7 +52,10 @@
 
 
 # This avoids to get an already configured filesystem on a new LV starting at
-# the same offset on the disk than an old one.
+# the same offset on the disk than an old one. More precisely, this avoids to
+# inherit an already configured fs and:
+# - not be able to mkfs on it, unless using force=yes
+# - get a corrupted fs because LV size < FS size
 - name: "get devices stat list"
   stat:
     follow: yes
@@ -65,7 +68,6 @@
     loop_var: fs
   register: devices
 
-
 - name: "wipe Filesystem signatures"
   command: "wipefs --all {{ fs }}"
   loop: "{{ wipefs_list }}"
@@ -76,10 +78,8 @@
   failed_when: wipefs.rc > 1
   vars:
     wipefs_list: |
-      [
-        {% for dev in devices.results if dev.stat.exists and dev.stat.isblk %}
-        "{{ dev.stat.path }}"{{ '' if loop.last else ',' }}{% endfor %}
-      ]
+      [ {% for dev in devices.results if dev.stat.exists and dev.stat.isblk %}
+        "{{ dev.stat.path }}"{{ '' if loop.last else ',' }}{% endfor %} ]
 
 
 # At this step, we can force the removal of the LV without risk.

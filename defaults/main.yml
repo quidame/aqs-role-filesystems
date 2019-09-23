@@ -14,6 +14,7 @@
 # filesystems__login: admin
 # filesystems__base_url: https://filesystems.qssdk.lab
 
+
 ################################################################################
 ## filesystems__action
 #
@@ -23,6 +24,7 @@
 # add/remove, and so on.
 #
 filesystems__action: setup
+
 
 ################################################################################
 ## filesystems__list
@@ -39,21 +41,18 @@ filesystems__list: []
 ## filesystems__*
 #
 # These are the default values, that are applicable to any FS to setup, if not
-# overridden by the same variables or per-fs in filesystems__list.
+# overridden by the same variables on a per-fs basis in filesystems__list.
 #
 filesystems__vg: data_vg
 filesystems__size: 512M
-filesystems__mode: 0755
 filesystems__fstype: ext4
 #filesystems__force:     OMIT
 #filesystems__resisefs:  OMIT
-#filesystems__active:    OMIT
 #filesystems__lvol_opts: OMIT
 #filesystems__pvs:       OMIT
 #filesystems__shrink:    OMIT
 #filesystems__mkfs_opts: OMIT
 #filesystems__backup:    OMIT
-#filesystems__boot:      OMIT
 #filesystems__dump:      OMIT
 #filesystems__mountopts: OMIT
 #filesystems__passno:    OMIT
@@ -65,4 +64,3 @@ filesystems__fstype: ext4
 #filesystems__serole:    OMIT
 #filesystems__setype:    OMIT
 #filesystems__seuser:    OMIT
-

@@ -6,14 +6,13 @@
 # Each task should be clearly named, with no inventory variable in the name.
 
 
-# Only one parameter is mandatory, the LV name. Others are either omited if
+# Only one parameter is mandatory, the LV name. Others are either omitted if
 # possible, or provided with a default value.
 - name: "create Logical Volumes"
   lvol:
     lv:       "{{ lv.lv }}"
     vg:       "{{ lv.vg        | default(filesystems__vg) }}"
     size:     "{{ lv.size      | default(filesystems__size) }}"
-    active:   "{{ lv.active    | default(filesystems__active    | default(omit)) }}"
     force:    "{{ lv.force     | default(filesystems__force     | default(omit)) }}"
     opts:     "{{ lv.lvol_opts | default(filesystems__lvol_opts | default(omit)) }}"
     pvs:      "{{ lv.pvs       | default(filesystems__pvs       | default(omit)) }}"
@@ -53,11 +52,10 @@
     path:   "{{ fs.path }}"
     src:    "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}"
     fstype: "{{ fs.fstype    | default(filesystems__fstype) }}"
-    backup: "{{ fs.backup    | default(filesystems__backup    | default(omit)) }}"
-    boot:   "{{ fs.boot      | default(filesystems__boot      | default(omit)) }}"
-    dump:   "{{ fs.dump      | default(filesystems__dump      | default(omit)) }}"
     opts:   "{{ fs.mountopts | default(filesystems__mountopts | default(omit)) }}"
+    dump:   "{{ fs.dump      | default(filesystems__dump      | default(omit)) }}"
     passno: "{{ fs.passno    | default(filesystems__passno    | default(omit)) }}"
+    backup: "{{ fs.backup    | default(filesystems__backup    | default(omit)) }}"
     state: mounted
   loop: "{{ filesystems__list }}"
   loop_control:
