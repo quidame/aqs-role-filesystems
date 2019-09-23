@@ -18,7 +18,7 @@ filesystems__action: unset
 ```
 
 A list of dictionnaries describing filsystems to setup or unset.
-```
+```yaml
 filesystems__list:
   - path:      **MANDATORY** - No default  - modules: mount, file
     lv:        **MANDATORY** - No default  - modules: lvol (filesystem, mount)
