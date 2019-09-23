@@ -3,16 +3,19 @@
 Ansible role to setup or unset filesystems, as well as their underlying Logical
 Volumes.
 
-This role is a piece of (*yet another*)
-[Ansible Quick Starter](/aqs-common) (**AQS**).
+This role is a piece of (*yet another*) [Ansible Quick Starter](/aqs-common)
+(**AQS**).
 
 ## Requirements
 
-LVM tools must be installed on hosts and a VG must already exist.
+LVM tools must be installed on hosts and a VG must already exist. Also, non-
+default FS tools must be installed apart to be able to use specific filesystem
+types.
 
 ## Role Variables
 
-The main action the role is called for. Choices are `setup` (the default) and `unset`.
+The main action the role is called for. Choices are `setup` (the default) and
+`unset`.
 ```yaml
 filesystems__action: unset
 ```
@@ -20,20 +23,18 @@ filesystems__action: unset
 A list of dictionnaries describing filsystems to setup or unset.
 ```yaml
 filesystems__list:
-  - path:      **MANDATORY** - No default  - modules: mount, file
-    lv:        **MANDATORY** - No default  - modules: lvol (filesystem, mount)
+  - path:      MANDATORY - No default  - modules: mount, file
+    lv:        MANDATORY - No default  - modules: lvol (filesystem, mount)
     vg:        Defaults to 'data_vg'   - modules: lvol (filesystem, mount)
     size:      Defaults to '512M'      - modules: lvol
     fstype:    Defaults to 'ext4'      - modules: filesystem, mount
     force:     No default - OMITTED    - modules: lvol, filesystem, file
     resisefs:  No default - OMITTED    - modules: lvol, filesystem
-    active:    No default - OMITTED    - modules: lvol
     lvol_opts: No default - OMITTED    - modules: lvol (=opts)
     pvs:       No default - OMITTED    - modules: lvol
     shrink:    No default - OMITTED    - modules: lvol
     mkfs_opts: No default - OMITTED    - modules: filesystem (=opts)
     backup:    No default - OMITTED    - modules: mount
-    boot:      No default - OMITTED    - modules: mount
     dump:      No default - OMITTED    - modules: mount
     mountopts: No default - OMITTED    - modules: mount (=opts)
     passno:    No default - OMITTED    - modules: mount
@@ -47,26 +48,62 @@ filesystems__list:
     seuser:    No default - OMITTED    - modules: file
 ```
 
-The following parameters/variables are not implemented:
+The following keys, matching other modules parameters by their names, are not
+implemented here and, for almost all, are not applicable:
 ```yaml
     opts:      Not implemented - modules: lvol, filesystem, mount - CONFLICTS
                See lvol_opts, mkfs_opts and mountopts.
     dev:       Not implemented - modules: filesystem - built from 'vg' and 'lv'
     src:       Not implemented - modules: mount      - built from 'vg' and 'lv'
     state:     Not implemented - modules: lvol, mount, file - HARDCODED
+    active:    Not implemented - modules: lvol  - N/A
     snapshot:  Not implemented - modules: lvol  - N/A
     thinpool:  Not implemented - modules: lvol  - N/A
+    boot:      Not implemented - modules: mount - N/A
     fstab:     Not implemented - modules: mount - N/A
     recurse:   Not implemented - modules: file  - N/A
 ```
 
 The default values that can be used. Each `filesystems__list`'s dictionnary
-key that is not mandatory can be set this way for all filesystems.
+key that is not mandatory can be set this way for all filesystems, and can
+be set/overridden on a per-fs basis.
+
+The default VG the LV belongs to.
 ```yaml
 filesystems__vg: data_vg
+```
+
+The default size of the LV to create, shrink or extend.
+```yaml
 filesystems__size: 512M
-filesystems__mode: 0755
+```
+
+The default filesystem type.
+```yaml
 filesystems__fstype: ext4
+```
+
+Other default parameters that are not set by the role and so get the default
+values of the related modules.
+```yaml
+filesystems__force:     (no)
+filesystems__resisefs:  (no)
+filesystems__lvol_opts: ()
+filesystems__pvs:       ()
+filesystems__shrink:    (yes) needs force=yes to be applied
+filesystems__mkfs_opts: ()
+filesystems__backup:    (no)
+filesystems__mountopts: ()
+filesystems__dump:      (0)
+filesystems__passno:    (0)
+filesystems__attr:      ()
+filesystems__mode:      () may depend on umask
+filesystems__group:     (root)
+filesystems__owner:     (root)
+filesystems__selevel:   (s0)
+filesystems__serole:    ()
+filesystems__setype:    ()
+filesystems__seuser:    ()
 ```
 
 ## Dependencies
