@@ -61,7 +61,6 @@
   loop_control:
     loop_var: fs
   notify:
-  notify:
     - regather_facts
     - reload_systemd
 
