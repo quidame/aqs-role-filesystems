@@ -2,4 +2,4 @@
 # role: filesystems
 # file: tasks/main.yml
 
-- include_tasks: "{{ filesystems__action | default('setup') }}.yml"
+- import_tasks: "{{ filesystems__action }}.yml"
