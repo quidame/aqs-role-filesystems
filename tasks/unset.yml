@@ -73,7 +73,7 @@
   loop: "{{ wipefs_list }}"
   loop_control:
     loop_var: fs
-  regiter: wipefs
+  register: wipefs
   changed_when: wipefs.rc == 0
   failed_when: wipefs.rc > 1
   vars:
