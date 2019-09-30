@@ -12,9 +12,6 @@ galaxy_info:
 
   categories: []
 
-  galaxy_tags:
-  - aqs::filesystems
-  - setup
-  - unset
+  galaxy_tags: []
 
 dependencies: []

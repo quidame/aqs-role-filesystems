@@ -26,23 +26,12 @@
 - name: "unmount Filesystems"
   mount:
     path: "{{ fs.path }}"
-    state: unmounted
-  loop: "{{ filesystems__list }}"
-  loop_control:
-    loop_var: fs
-  notify:
-    - regather_facts
-    - reload_systemd
-
-
-- name: "remove entries in fstab"
-  mount:
-    path: "{{ fs.path }}"
     state: absent
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: fs
   notify:
+    - regather_facts
     - reload_systemd
 
 
@@ -85,12 +74,12 @@
 # At this step, we can force the removal of the LV without risk.
 - name: "remove Logical Volumes"
   lvol:
-    lv: "{{ fs.lv }}"
-    vg: "{{ fs.vg | default(filesystems__vg) }}"
+    lv: "{{ lv.lv }}"
+    vg: "{{ lv.vg | default(filesystems__vg) }}"
     state: absent
     force: yes
   loop: "{{ filesystems__list }}"
   loop_control:
-    loop_var: fs
+    loop_var: lv
   notify:
     - regather_facts

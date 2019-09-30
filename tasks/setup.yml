@@ -28,7 +28,7 @@
 
 # Again, there is only one mandatory parameter, that is the same as above. We
 # use /dev/VG/LV path scheme here, because simpler than /dev/mapper/VG-LV.
-- name: "create Filesystems"
+- name: "create filesystems"
   filesystem:
     dev:      "/dev/{{ fs.vg   | default(filesystems__vg) }}/{{ fs.lv }}"
     fstype:   "{{ fs.fstype    | default(filesystems__fstype) }}"
@@ -47,7 +47,7 @@
 # a default value by the role. We use /dev/mapper/VG-LV path scheme here because
 # of kernel compliance: this is always this path scheme that is exposed by the
 # kernel in /proc/mounts, so it should be considered canonical to populate fstab
-- name: "mount Filesystems"
+- name: "mount filesystems"
   mount:
     path:   "{{ fs.path }}"
     src:    "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}"
@@ -71,7 +71,7 @@
 
 
 # Again, we just reuse the same mandatory parameter as above.
-- name: "update access permissions to the roots of Filesystems"
+- name: "update access permissions to the roots of filesystems"
   file:
     path:    "{{ dir.path }}"
     attr:    "{{ dir.attr    | default(filesystems__attr    | default(omit)) }}"

@@ -97,7 +97,7 @@ filesystems__mountopts: ()
 filesystems__dump:      (0)
 filesystems__passno:    (0)
 filesystems__attr:      ()
-filesystems__mode:      () may depend on umask
+filesystems__mode:      () results may depend on umask
 filesystems__group:     (root)
 filesystems__owner:     (root)
 filesystems__selevel:   (s0)
