@@ -23,11 +23,13 @@
   failed_when: kill.rc > 1
 
 
+# The list is reverse sorted against the mountpoints to ensure nested mounts
+# are undone in the right order.
 - name: "unmount Filesystems"
   mount:
     path: "{{ fs.path }}"
     state: absent
-  loop: "{{ filesystems__list }}"
+  loop: "{{ filesystems__list | sort(attribute='path') | reverse | list }}"
   loop_control:
     loop_var: fs
   notify:

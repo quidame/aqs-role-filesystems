@@ -47,6 +47,8 @@
 # a default value by the role. We use /dev/mapper/VG-LV path scheme here because
 # of kernel compliance: this is always this path scheme that is exposed by the
 # kernel in /proc/mounts, so it should be considered canonical to populate fstab
+# The list is sorted against the mountpoints to ensure nested mounts are done in
+# the right order.
 - name: "mount filesystems"
   mount:
     path:   "{{ fs.path }}"
@@ -57,7 +59,7 @@
     passno: "{{ fs.passno    | default(filesystems__passno    | default(omit)) }}"
     backup: "{{ fs.backup    | default(filesystems__backup    | default(omit)) }}"
     state: mounted
-  loop: "{{ filesystems__list }}"
+  loop: "{{ filesystems__list | sort(attribute='path') }}"
   loop_control:
     loop_var: fs
   notify:
