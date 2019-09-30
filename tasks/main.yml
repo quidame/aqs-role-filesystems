@@ -2,4 +2,10 @@
 # role: filesystems
 # file: tasks/main.yml
 
+# Display the data structure of the main variable
+- name: display filesystems__list
+  debug:
+    var: filesystems__list
+    verbosity: 2
+
 - import_tasks: "{{ filesystems__action }}.yml"
