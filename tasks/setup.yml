@@ -22,8 +22,6 @@
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: lv
-  notify:
-    - regather_facts
 
 
 # Again, there is only one mandatory parameter, that is the same as above. We
@@ -38,8 +36,6 @@
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: fs
-  notify:
-    - regather_facts
 
 
 # This task introduces a new mandatory parameter, that is the absolute path of
@@ -63,13 +59,7 @@
   loop_control:
     loop_var: fs
   notify:
-    - regather_facts
     - reload_systemd
-
-
-# Reload Systemd, so mount units are up to date after changes in /proc/mounts
-# and/or /etc/fstab.
-- meta: flush_handlers
 
 
 # Again, we just reuse the same mandatory parameter as above.

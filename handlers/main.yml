@@ -12,8 +12,3 @@
     daemon_reload: yes
   listen:
     - reload_systemd
-
-- name: "force ansible to regather facts"
-  setup:
-  listen:
-    - regather_facts
