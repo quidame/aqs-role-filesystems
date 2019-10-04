@@ -6,8 +6,16 @@
 # Each task should be clearly named, with no inventory variable in the name.
 
 
+# This block is added to work around restrictive umasks and grant access to
+# the filesystem (to be created) to its owner.
+- name: "include tasks to create paremt directories"
+  include_tasks: parentdirs-create.yml
+  when: filesystems__parents|default({}) != {}
+
+
 # Only one parameter is mandatory, the LV name. Others are either omitted if
-# possible, or provided with a default value.
+# possible, or provided with a default value. But note that all parameters of
+# the module are supported, if necessary.
 - name: "create Logical Volumes"
   lvol:
     lv:       "{{ lv.lv }}"
@@ -22,11 +30,13 @@
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: lv
+    label: "{{ lv.vg | default(filesystems__vg) }}/{{ lv.lv }}"
 
 
 # Again, there is only one mandatory parameter, that is the same as above. We
-# use /dev/VG/LV path scheme here, because simpler than /dev/mapper/VG-LV.
-- name: "create filesystems"
+# use /dev/VG/LV path scheme here, because it's simpler to build than DM scheme
+# /dev/mapper/VG-LV.
+- name: "create filesystems on Logical Volumes"
   filesystem:
     dev:      "/dev/{{ fs.vg   | default(filesystems__vg) }}/{{ fs.lv }}"
     fstype:   "{{ fs.fstype    | default(filesystems__fstype) }}"
@@ -36,6 +46,10 @@
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: fs
+    label: {
+      "fstype": "{{ fs.fstype | default(filesystems__fstype) }}",
+      "dev": "/dev/{{ fs.vg | default(filesystems__vg) }}/{{ fs.lv }}"
+      }
 
 
 # This task introduces a new mandatory parameter, that is the absolute path of
@@ -58,6 +72,10 @@
   loop: "{{ filesystems__list | sort(attribute='path') }}"
   loop_control:
     loop_var: fs
+    label: {
+      "src": "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}",
+      "path": "{{ fs.path }}"
+      }
   notify:
     - reload_systemd
 

@@ -2,10 +2,20 @@
 # role: filesystems
 # file: tasks/main.yml
 
+
 # Display the data structure of the main variable
-- name: display filesystems__list
+- name: "display filesystems__list"
   debug:
     var: filesystems__list
     verbosity: 2
 
+
+- name: "get list of mountpoints to {{ filesystems__action }}"
+  set_fact:
+    mountpoints: "{{ filesystems__list | json_query('[*].path') }}"
+
+
+# Supported actions are:
+# - setup
+# - unset
 - import_tasks: "{{ filesystems__action }}.yml"

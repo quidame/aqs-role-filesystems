@@ -9,7 +9,9 @@
 # Some services may still write or read into files, or a user may stay
 # somewhere into the tree, making the mountpoint busy and leading the
 # umount command to fail. Killing all processes accessing the filesystem
-# is the way.
+# will prevent this. This doesn't support cases such as:
+# - a directory on the mounted filesystem is itself an active mount
+# - a file on the mounted filesystem is associated to a loop device
 - name: "kill remaining processes accessing filesystems"
   command: |
     fuser --kill \
@@ -18,6 +20,7 @@
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: fs
+    label: "{{ fs.path }}"
   register: kill
   changed_when: kill.rc == 0
   failed_when: kill.rc > 1
@@ -32,6 +35,7 @@
   loop: "{{ filesystems__list | sort(attribute='path') | reverse | list }}"
   loop_control:
     loop_var: fs
+    label: "{{ fs.path }}"
   notify:
     - reload_systemd
 
@@ -41,7 +45,7 @@
 # inherit an already configured fs and:
 # - not be able to mkfs on it, unless using force=yes
 # - get a corrupted fs because LV size < FS size
-- name: "get devices stat list"
+- name: "stat filesystems that could be wiped"
   stat:
     follow: yes
     get_attributes: no
@@ -51,7 +55,9 @@
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: fs
+    label: "/dev/{{ fs.vg | default(filesystems__vg) }}/{{ fs.lv }}"
   register: devices
+
 
 - name: "wipe Filesystem signatures"
   command: "wipefs --all {{ fs }}"
@@ -77,3 +83,9 @@
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: lv
+    label: "{{ lv.vg | default(filesystems__vg) }}/{{ lv.lv }}"
+
+
+# The mountpoint has been removed. Maybe its parent is empty now, so remove it
+# too, and its parent, etc.
+- import_tasks: parentdirs-remove.yml
