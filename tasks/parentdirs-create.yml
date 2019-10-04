@@ -1,0 +1,85 @@
+---
+# role: filesystems
+# file: tasks/parentdirs-create.yml
+#
+# Tasks to create parent directories of mountpoints before setting them.
+# Each task should be clearly named, with no inventory variable in the name.
+
+
+# We need to build a list of directories from the list of mountpoints. The
+# directories we want to list are the parents of all mountpoints, less the
+# parents of nested mountpoints, less the mountpoints themtheves. Example:
+#
+# mountpoints:
+#   - /var/foo
+#   - /var/foo/bar/baz
+#   - /opt/foo/bar
+#   - /foo/bar/var
+#
+# directory tree:
+#   - /foo
+#   - /foo/bar
+#   - /foo/bar/baz      -> discarded (mountpoint)
+#   - /opt              -> discarded (is existing)
+#   - /opt/foo
+#   - /opt/foo/bar      -> discarded (mountpoint)
+#   - /var              -> discarded (is existing)
+#   - /var/foo          -> discarded (mountpoint)
+#   - /var/foo/bar      -> discarded (is in /var/foo)
+#   - /var/foo/bar/baz  -> discarded (mountpoint, is in /var/foo)
+#
+# will result in the creation (with specific mode, owner, etc) of the following
+# directories:
+#   - /foo
+#   - /foo/bar
+#   - /opt/foo
+#
+# /var/foo/bar is discarded because /var/foo is a mountpoint to be created.
+# Creating it now has no sense as it will be hidden by the mount on /var/foo.
+
+
+- name: "stat directories that could be created"
+  stat:
+    path: "{{ path }}"
+  register: stat
+  loop: "{{ templist | sort | unique }}"
+  loop_control:
+    loop_var: path
+  vars:
+    # List nested mountpoints, i.e. elements of the list that include another,
+    # such as in [ "/srv", "/srv/tftp" ], /srv/tftp is a nested mount.
+    templist0: |
+      [ {% for i in mountpoints | product(mountpoints) | list if i.0 is match(i.1 + '/') %}
+        "{{ i.0 }}"{{ '' if loop.last else ',' }}{% endfor %} ]
+    # Decompose the initial path to all its elements
+    templist: |
+      [
+        {% for p in mountpoints | difference(templist0) %}
+        {% for i in range(1, p.split('/')|length-1) %}
+        "{{ p | regex_replace('(/[^/]+){%s}$' % i, '') }}"
+        {{ '' if loop.last else ',' }}{% endfor %}
+        {{ '' if loop.last else ',' }}{% endfor %}
+      ]
+
+
+- name: "create missing directories"
+  file:
+    path: "{{ path }}"
+    attr:    "{{ filesystems__parents.attr    | default(omit) }}"
+    mode:    "{{ filesystems__parents.mode    | default(omit) }}"
+    owner:   "{{ filesystems__parents.owner   | default(omit) }}"
+    group:   "{{ filesystems__parents.group   | default(omit) }}"
+    selevel: "{{ filesystems__parents.selevel | default(omit) }}"
+    serole:  "{{ filesystems__parents.serole  | default(omit) }}"
+    setype:  "{{ filesystems__parents.setype  | default(omit) }}"
+    seuser:  "{{ filesystems__parents.seuser  | default(omit) }}"
+    state: directory
+  loop: "{{ temp_list }}"
+  loop_control:
+    loop_var: path
+  vars:
+    temp_list: |
+      [
+        {% for s in stat.results if not s.stat.exists %}
+        "{{ s.path }}"{{ '' if loop.last else ',' }}{% endfor %}
+      ]

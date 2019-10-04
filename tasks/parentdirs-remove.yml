@@ -1,0 +1,80 @@
+---
+# role: filesystems
+# file: tasks/parentdirs-remove.yml
+#
+# Tasks to remove parent directories of mountpoints after unsetting them.
+# Each task should be clearly named, with no inventory variable in the name.
+
+
+# We need to build a list of directories from the list of mountpoints. The
+# directories we want to list are the parents of all mountpoints, Example:
+#
+# mountpoints:
+#   - /var/foo
+#   - /var/foo/bar/baz
+#   - /opt/foo/bar
+#   - /foo/bar/var
+#
+# directory list:
+#   - /var/foo/bar/baz
+#   - /var/foo/bar
+#   - /var/foo
+#   - /var
+#   - /opt/foo/bar
+#   - /opt/foo
+#   - /opt
+#   - /foo/bar/var
+#   - /foo/bar
+#   - /foo
+#
+# Then stat will help to find which are removable.
+
+
+- name: "stat directories that could be removed"
+  stat:
+    path: "{{ path }}"
+  register: stat
+  loop: "{{ templist | sort | unique }}"
+  loop_control:
+    loop_var: path
+  vars:
+    # Get the complete list of all directories for each mountpoint, including
+    # the mp itself.  The nested loop is looping over the depth of the given
+    # mountpoint.
+    templist: |
+      [
+        {% for p in mountpoints %}{% for i in range(0, p.split('/')|length-1) %}
+        "{{ p | regex_replace('(/[^/]+){%s}$' % i, '') }}"
+        {{ '' if loop.last else ',' }}{% endfor %}
+        {{ '' if loop.last else ',' }}{% endfor %}
+      ]
+
+
+- name: "remove ascending empty directories"
+  shell: |
+    mountpoint {{ dir }} ||
+    rmdir --verbose {{ dir }}
+  register: rmdir
+  loop: "{{ templist | reverse | list }}"
+  loop_control:
+    loop_var: dir
+  failed_when:
+    - rmdir.rc != 0
+    - rmdir.stderr is not search('not empty$')
+    - rmdir.stdout is not search('is a mountpoint$')
+  changed_when:
+    - rmdir.rc == 0
+    - rmdir.stdout is not search('is a mountpoint')
+  environment:
+    LANG: C
+  vars:
+    # Dirs with more than one subdir are skipped, as well as first level dirs
+    # (/opt, /srv, /var, ...)
+    templist: |
+      [
+        {% for s in stat.results if
+          s.stat.exists and
+          s.stat.nlink in [2,3] and
+          s.path is not match( '/[^/]*$' ) %}
+        "{{ s.path }}"{{ '' if loop.last else ',' }}{% endfor %}
+      ]
