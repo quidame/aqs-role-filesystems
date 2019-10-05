@@ -70,7 +70,7 @@ be set/overridden on a per-fs basis.
 
 The default VG the LV belongs to.
 ```yaml
-filesystems__vg: data_vg
+filesystems__vg: vg0
 ```
 
 The default size of the LV to create, shrink or extend.
