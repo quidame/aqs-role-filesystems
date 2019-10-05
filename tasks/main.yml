@@ -3,16 +3,20 @@
 # file: tasks/main.yml
 
 
+# The check points are developped in a dedicated file. Their purpose is to fail
+# as soon as possible in case some conditions (OS compatibility or mandatory
+# parameters)
+- import_tasks: checkpoint.yml
+  tags:
+    - never
+    - check
+
+
 # Display the data structure of the main variable
 - name: "display filesystems__list"
   debug:
     var: filesystems__list
     verbosity: 2
-
-
-- name: "get list of mountpoints to {{ filesystems__action }}"
-  set_fact:
-    mountpoints: "{{ filesystems__list | json_query('[*].path') }}"
 
 
 # Supported actions are:
