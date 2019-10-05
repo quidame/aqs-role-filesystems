@@ -1,0 +1,32 @@
+---
+# role: filesystems
+# file: tasks/checkpoint.yml
+
+
+# This is intended to prevent late errors by catching common cases of failure.
+# 1. OS compatibility
+# 2. Mandatory parameters and their expected formats or values
+- name: "check point"
+  assert:
+    that: |
+      {% set list = 'filesystems__list' %}
+      [
+        '( ansible_distribution in ["Debian"] and ansible_distribution_major_version is version("9", ">=") ) or
+         ( ansible_distribution in ["Redhat"] and ansible_distribution_major_version is version("6", ">=") )'
+      ] + [
+        'filesystems__action in ["setup", "unset"]'
+      ] + [
+        {% for fs in filesystems__list %}
+        {% set i = loop.index - 1 %}
+        '{{ list }}.{{ i }}.path is defined',
+        '{{ list }}.{{ i }}.lv is defined',
+        '{{ list }}.{{ i }}.vg is defined or filesystems__vg is defined',
+        '{{ list }}.{{ i }}.size is defined or filesystems__size is defined',
+        '{{ list }}.{{ i }}.size is undefined or {{ list }}.{{ i }}.size is match("[1-9]+([MmGgTt]|%VG)$")',
+        '{{ list }}.{{ i }}.fstype is defined or filesystems__fstype is defined',
+        '{{ list }}.{{ i }}.fstype is undefined or {{ list }}.{{ i }}.fstype in filesystems__fstypes|default([]) + ["ext4", "xfs"]'
+        {{ '' if loop.last else ',' }}{% endfor %}
+      ] + [
+        'filesystems__fstype is undefined or filesystems__fstype in filesystems__fstypes|default([]) + ["ext4","xfs"]',
+        'filesystems__size is undefined or filesystems__size is match("[1-9]+([MmGgTt]|%VG)$")'
+      ]
