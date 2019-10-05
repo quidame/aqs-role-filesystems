@@ -26,7 +26,9 @@
         {% for fs in filesystems__list %}
         {% set i = loop.index - 1 %}
         '{{ list }}.{{ i }}.path is defined',
+        '{{ list }}.{{ i }}.path is not match("/.*[^/]$")',
         '{{ list }}.{{ i }}.lv is defined',
+        '{{ list }}.{{ i }}.lv is not search("/")',
         '{{ list }}.{{ i }}.vg is defined or filesystems__vg is defined',
         '{{ list }}.{{ i }}.size is defined or filesystems__size is defined',
         '{{ list }}.{{ i }}.size is undefined or {{ list }}.{{ i }}.size is match("[1-9]+([MmGgTt]|%VG)$")',
