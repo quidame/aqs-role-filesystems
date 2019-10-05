@@ -1,6 +1,12 @@
 ---
 # role: filesystems
-# file: tasks/checkpoint.yml
+# file: tasks/checkpoints.yml
+
+
+# Display the data structure of the main variable
+- name: "display main variable"
+  debug:
+    var: filesystems__list
 
 
 # This is intended to prevent late errors by catching common cases of failure.
@@ -14,7 +20,8 @@
         '( ansible_distribution in ["Debian"] and ansible_distribution_major_version is version("9", ">=") ) or
          ( ansible_distribution in ["Redhat"] and ansible_distribution_major_version is version("6", ">=") )'
       ] + [
-        'filesystems__action in ["setup", "unset"]'
+        'filesystems__action in ["setup", "unset"]',
+        'filesystems__mountpoints == {{ list }} | json_query("[*].path")'
       ] + [
         {% for fs in filesystems__list %}
         {% set i = loop.index - 1 %}
