@@ -20,6 +20,8 @@
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: fs
+    # As the filesystems__list dictionnaries support a lot of keys, we
+    # keep only the most relevant against the name of the task.
     label: "{{ fs.path }}"
   register: kill
   changed_when: kill.rc == 0

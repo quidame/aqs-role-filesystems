@@ -34,7 +34,7 @@
   stat:
     path: "{{ path }}"
   register: stat
-  loop: "{{ templist | sort | unique }}"
+  loop: "{{ templist | sort | unique | reverse | list }}"
   loop_control:
     loop_var: path
   vars:
@@ -43,7 +43,7 @@
     # mountpoint.
     templist: |
       [
-        {% for p in mountpoints %}{% for i in range(0, p.split('/')|length-1) %}
+        {% for p in filesystems__mountpoints %}{% for i in range(0, p.split('/')|length-2) %}
         "{{ p | regex_replace('(/[^/]+){%s}$' % i, '') }}"
         {{ '' if loop.last else ',' }}{% endfor %}
         {{ '' if loop.last else ',' }}{% endfor %}
@@ -55,7 +55,7 @@
     mountpoint {{ dir }} ||
     rmdir --verbose {{ dir }}
   register: rmdir
-  loop: "{{ templist | reverse | list }}"
+  loop: "{{ templist }}"
   loop_control:
     loop_var: dir
   failed_when:
@@ -64,7 +64,7 @@
     - rmdir.stdout is not search('is a mountpoint$')
   changed_when:
     - rmdir.rc == 0
-    - rmdir.stdout is not search('is a mountpoint')
+    - rmdir.stdout is not search('is a mountpoint$')
   environment:
     LANG: C
   vars:

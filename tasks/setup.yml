@@ -8,7 +8,7 @@
 
 # This block is added to work around restrictive umasks and grant access to
 # the filesystem (to be created) to its owner.
-- name: "include tasks to create paremt directories"
+- name: "include tasks to create parent directories with non-default properties"
   include_tasks: parentdirs-create.yml
   when: filesystems__parents|default({}) != {}
 
@@ -30,6 +30,8 @@
   loop: "{{ filesystems__list }}"
   loop_control:
     loop_var: lv
+    # As the filesystems__list dictionnaries support a lot of keys, we
+    # keep only the most relevant against the name of the task.
     label: "{{ lv.vg | default(filesystems__vg) }}/{{ lv.lv }}"
 
 
@@ -59,7 +61,7 @@
 # kernel in /proc/mounts, so it should be considered canonical to populate fstab
 # The list is sorted against the mountpoints to ensure nested mounts are done in
 # the right order.
-- name: "mount filesystems"
+- name: "mount filesystems and register them in fstab"
   mount:
     path:   "{{ fs.path }}"
     src:    "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}"
