@@ -45,7 +45,7 @@
     force:    "{{ fs.force     | default(filesystems__force     | default(omit)) }}"
     opts:     "{{ fs.mkfs_opts | default(filesystems__mkfs_opts | default(omit)) }}"
     resizefs: "{{ fs.resizefs  | default(filesystems__resizefs  | default(omit)) }}"
-  loop: "{{ filesystems__list }}"
+  loop: "{{ filesystems__list | sort(attribute='lv') }}"
   loop_control:
     loop_var: fs
     label: {
@@ -56,14 +56,17 @@
 
 # This task introduces a new mandatory parameter, that is the absolute path of
 # the mountpoint. THe third parameter that is mandatory for the module is given
-# a default value by the role. We use /dev/mapper/VG-LV path scheme here because
-# of kernel compliance: this is always this path scheme that is exposed by the
-# kernel in /proc/mounts, so it should be considered canonical to populate fstab
+# a default value by the role.
+# We use /dev/mapper/VG-LV path scheme here becausea of kernel compliance: this
+# is always this path scheme that is exposed by the kernel in /proc/mounts and
+# by other tools such as lsblk and blkid, so it should be considered canonical
+# to populate fstab with. Also, directory names are made canonical too for the
+# same raeson.
 # The list is sorted against the mountpoints to ensure nested mounts are done in
 # the right order.
 - name: "mount filesystems and register them in fstab"
   mount:
-    path:   "{{ fs.path }}"
+    path:   "{{ fs.path | regex_replace('/$', '') }}"
     src:    "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}"
     fstype: "{{ fs.fstype    | default(filesystems__fstype) }}"
     opts:   "{{ fs.mountopts | default(filesystems__mountopts | default(omit)) }}"
@@ -76,7 +79,7 @@
     loop_var: fs
     label: {
       "src": "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}",
-      "path": "{{ fs.path }}"
+      "path": "{{ fs.path | regex_replace('/$', '') }}"
       }
   notify:
     - reload_systemd
@@ -85,7 +88,7 @@
 # Again, we just reuse the same mandatory parameter as above.
 - name: "update access permissions to the roots of filesystems"
   file:
-    path:    "{{ dir.path }}"
+    path:    "{{ dir.path | regex_replace('/$', '') }}"
     attr:    "{{ dir.attr    | default(filesystems__attr    | default(omit)) }}"
     mode:    "{{ dir.mode    | default(filesystems__mode    | default(omit)) }}"
     owner:   "{{ dir.owner   | default(filesystems__owner   | default(omit)) }}"
