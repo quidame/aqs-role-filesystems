@@ -50,6 +50,12 @@
       ]
 
 
+# Prevent errors on mountpoints and ignore errors on non-empty directories. So,
+# the task is passing through, and only directories actually removed are stated
+# as chahnged. Here, tasks that are marked OK (unfailed, unchanged, unskipped)
+# do not mean that the directory was already removed, but that the state of the
+# target remains unchanged. The directory is still there, and this is not an
+# error !!!
 - name: "remove ascending empty directories"
   shell: |
     mountpoint {{ dir }} ||
@@ -61,7 +67,6 @@
   failed_when:
     - rmdir.rc != 0
     - rmdir.stderr is not search('not empty$')
-    - rmdir.stdout is not search('is a mountpoint$')
   changed_when:
     - rmdir.rc == 0
     - rmdir.stdout is not search('is a mountpoint$')
