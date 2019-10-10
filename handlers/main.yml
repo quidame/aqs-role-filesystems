@@ -5,7 +5,7 @@
 # This file should contain tasks that will be played at the end of the play,
 # i.e. when other roles have been played too.  Notified handlers may be played
 # anytime with:
-# - meta: flush_handlers.
+# - meta: flush_handlers
 
 - name: "update Systemd mount units"
   systemd:
