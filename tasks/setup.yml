@@ -7,7 +7,18 @@
 
 
 # This block is added to work around restrictive umasks and grant access to
-# the filesystem (to be created) to its owner.
+# the filesystem (to be created) to its owner. Common practices (but not all
+# good) are to set parent directories:
+# * 0755 root:root
+#   + The default with factory's defaults
+#   + Recommended for almost all usecases
+#   - Has to be explicit with non default restrictive umasks
+# * 0750 owner:group
+#   - Doesn't really add a security layer
+#   - Makes inner filesystems invisible to 'df' for other users
+#
+# Another practice could be to create directories with the same properties
+# than their parent mountpoint, but it seems to be harder to implement
 - name: "include tasks to create parent directories with non-default properties"
   include_tasks: parentdirs-create.yml
   when: filesystems__parents|default({}) != {}
@@ -66,7 +77,7 @@
 # the right order.
 - name: "mount filesystems and register them in fstab"
   mount:
-    path:   "{{ fs.path | regex_replace('/$', '') }}"
+    path:   "{{ fs.path | regex_replace('/+$', '') }}"
     src:    "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}"
     fstype: "{{ fs.fstype    | default(filesystems__fstype) }}"
     opts:   "{{ fs.mountopts | default(filesystems__mountopts | default(omit)) }}"
@@ -79,7 +90,7 @@
     loop_var: fs
     label: {
       "src": "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}",
-      "path": "{{ fs.path | regex_replace('/$', '') }}"
+      "path": "{{ fs.path | regex_replace('/+$', '') }}"
       }
   notify:
     - reload_systemd
@@ -88,7 +99,7 @@
 # Again, we just reuse the same mandatory parameter as above.
 - name: "update access permissions to the roots of filesystems"
   file:
-    path:    "{{ dir.path | regex_replace('/$', '') }}"
+    path:    "{{ dir.path | regex_replace('/+$', '') }}"
     attr:    "{{ dir.attr    | default(filesystems__attr    | default(omit)) }}"
     mode:    "{{ dir.mode    | default(filesystems__mode    | default(omit)) }}"
     owner:   "{{ dir.owner   | default(filesystems__owner   | default(omit)) }}"
