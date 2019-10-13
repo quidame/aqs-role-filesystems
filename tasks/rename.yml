@@ -1,0 +1,262 @@
+---
+# role: filesystems
+# file: tasks/rename.yml
+#
+# Tasks to rename either a Logical Volume or a mountpoint and update /etc/fstab
+# accordingly.
+# Each task should be clearly named, with no inventory variable in the name.
+
+
+# For each mount, these tasks are designed to be able to rename either the
+# Logical Volume (lv) or the mountpoint (path), not both. This file is suitable
+# for updating mounts when migrating from an implementation of a role to
+# another.
+#
+# For example, when giving:
+#filesystems__list:
+#  path: /foo/bar
+#  lv: foobar
+#  vg: vg0
+#
+# and:
+# * /dev/mapper/vg0-foobar is mounted on /foo/bar (the target state)
+# then:
+# > nothing to do
+#
+# or:
+# * /dev/mapper/vg0-foobar is mounted on /foobar
+# * /foo/bar is not a mountpoint
+# then:
+# > /foobar is unmounted and removed if empty
+# > /dev/mapper/vg0-foobar is mounted on /foo/bar (the target state)
+# > /etc/fstab is up-to-date
+#
+# or:
+# * /dev/mapper/vg0-foo_bar is mounted on /foo/bar
+# * /dev/mapper/vg0-foobar doesn't exist
+# then:
+# > /foo/bar is unmounted
+# > LV foo_bar is renamed foobar
+# > /dev/mapper/vg0-foobar is mounted on /foo/bar (the target state)
+# > /etc/fstab is up-to-date
+#
+# or:
+# * anything else
+# then:
+# > nothing to do
+
+
+# This is a way: compute temporary variables on the fly within the `vars` (the
+# task attribute), and export to the entire playbook those whose purpose is to
+# be parsed many times further, with set_fact.
+#
+- name: "build data structure exposing running state vs expected state"
+  set_fact:
+    filesystems__to_rename: "{{ templist }}"
+  vars:
+    # Keep a small subset of ansible_mounts. Other keys are not relevant for
+    # our needs, and so filtered.
+    tempvar0: |
+      [
+        {% for m in ansible_mounts %}{
+          "dev": "{{ m.device }}",
+          "dir": "{{ m.mount }}",
+          "fstype": "{{ m.fstype }}"
+          }{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    tempvar1: |
+      [
+        {% for m in __internal__ %} {
+          "dev": "/dev/mapper/{{ m.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ m.lv | regex_replace('-', '--') }}",
+          "dir": "{{ m.path | regex_replace('/+$', '') }}",
+          "fstype": "{{ m.fstype | default(filesystems__fstype) }}",
+          }{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    # Build the main dictlist with:
+    #
+    # fstype: the old and new mounts must be of the same fstype
+    # old:
+    #   dev: old device path (/dev/mapper/...)
+    #   dir: old mountpoint
+    # new:
+    #   dev: new device path (/dev/mapper/...)
+    #   dir: new mountpoint
+    # type: "dev" or "dir", i.e. the type of the path to "rename"
+    # source: old device or mountpoint (the one to be renamed)
+    # target: new device or mountpoint (same type than source)
+    #
+    templist: |
+      [
+        {% for p in tempvar0 | product(tempvar1) if
+          p.0 != p.1 and
+          p.0.fstype == p.1.fstype and
+          ( p.0.dir == p.1.dir or
+            p.0.dev == p.1.dev ) %}{
+          "fstype": "{{ p.0.fstype }}",
+          "new": {
+            "dev": "{{ p.1.dev }}",
+            "dir": "{{ p.1.dir }}"
+            },
+          "old": {
+            "dev": "{{ p.0.dev }}",
+            "dir": "{{ p.0.dir }}"
+            },
+          {% if p.0.dev == p.1.dev %}
+          "source": "{{ p.0.dir }}",
+          "target": "{{ p.1.dir }}",
+          "type": "dir"
+          {% else %}
+          "source": "{{ p.0.dev }}",
+          "target": "{{ p.1.dev }}",
+          "type": "dev"
+          {% endif %}
+        }{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+
+- name: "display the data structure we will play with"
+  debug:
+    var: filesystems__to_rename
+
+
+# Now we need to know if target devices already exist, or if target directories
+# are already active mountpoints. We'll have to skip them.
+- name: "stat paths that devices and mountpoints could be renamed to"
+  stat:
+    path: "{{ mount.target }}"
+  loop: "{{ filesystems__to_rename }}"
+  loop_control:
+    loop_var: mount
+    label: { "old": "{{ mount.source }}", "new": "{{ mount.target }}" }
+  register: dst
+
+
+# Split list depending on what to do with their elements:
+# - devices will be properly renamed with 'lvrename' (LVM command)
+# - directories: old mounts will be removed, new ones will be created
+# Before that, both devices and directories will be unmounted.
+# After that old paths will be replaced by new ones in fstab, and
+# finally new devices and directories will be remounted.
+- name: "build list of devices and mountpoints that will be renamed"
+  set_fact:
+    devices: |
+      [
+        {% for i in range(0, filesystems__to_rename | length)
+          if filesystems__to_rename[i].type == "dev" and not dst.results[i].stat.exists %}
+        {{ filesystems__to_rename[i] }}{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+    directories: |
+      [
+        {% for i in range(0, filesystems__to_rename | length)
+          if filesystems__to_rename[i].type == "dir" and
+          dst.results[i].mount.target not in ansible_mounts | json_query('[*].mount') and
+          ( not dst.results[i].stat.exists or dst.results[i].stat.isdir ) %}
+        {{ filesystems__to_rename[i] }}{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+
+# Of course, this means mounts are free of running processes.
+# Unfortunatly, we have to unmount devices even if it is possible to rename
+# Logical Volumes on the fly, since some system tools (and so gathered facts)
+# may fall in an out-of-sync and still display the old name of the device.
+# This is the case, for example, of the `df` command.
+- name: "unmount devices and directories to be renamed"
+  mount:
+    path: "{{ mount.old.dir }}"
+    state: unmounted
+  register: unmount
+  loop: "{{ ( devices + directories ) | sort(attribute='old.dir') | reverse | list }}"
+  loop_control:
+    loop_var: mount
+    label: "{{ mount.source }}"
+
+
+- name: "remove remaining empty directories"
+  include_tasks: parentdirs-remove.yml
+  vars:
+    mount_points: |
+      [
+        {% for m in unmount.results if m is changed and m.mount.type == "dir" %}
+        "{{ m.mount.source }}"{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+- name: "create missing parent directories"
+  include_tasks: parentdirs-create.yml
+  vars:
+    mount_points: |
+      [
+        {% for m in unmount.results if m is changed and m.mount.type == "dir" %}
+        "{{ m.mount.target }}"{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+  when:
+    - filesystems__parents != {}
+
+
+# The dilemna: when working with system tools that rely on what is exposed by
+# the kernel in /proc or /sys, Logical Volume paths are /dev/mapper/VG-LV. This
+# is the case of 'df', 'blkid', 'lsblk', ... and so gathered facts. But when
+# working with LVM tools, arguments such as /dev/VG/LV or VG/LV or LV VG are
+# expected. Kernel compliant format must be translated to LVM format, no choice
+# here.
+- name: "rename Logical Volumes"
+  command: |
+    lvrename \
+    {{ lv.source | basename | regex_replace( '([^-])-([^-])', '\1/\2' ) | regex_replace('--', '-') }} \
+    {{ lv.target | basename | regex_replace( '([^-])-([^-])', '\1/\2' ) | regex_replace('--', '-') }}
+  loop: "{{ templist }}"
+  loop_control:
+    loop_var: lv
+    label: { "old": "{{ lv.source }}", "new": "{{ lv.target }}" }
+  vars:
+    templist: |
+      [
+        {% for m in unmount.results if m is changed and m.mount.type == "dev" %}{
+          "source": "{{ m.mount.source }}",
+          "target": "{{ m.mount.target }}",
+        }{{ '' if loop.last else ',' }}{% endfor %}
+      ]
+
+
+# Once it will be done, the next task shouldn't modify the file again. Otherwise
+# we could expect duplicated and/or obsolete entries in fstab, that may lead to
+# critical issues when rebooting the host.
+- name: "replace fstab entries"
+  replace:
+    path: /etc/fstab
+    regexp: "(^|\\s){{ mount.source }}(\\s)"
+    replace: "\\1{{ mount.target }}\\2"
+  loop: "{{ devices + directories }}"
+  loop_control:
+    loop_var: mount
+    label: {
+      "rename": {
+        "old": "{{ mount.source }}",
+        "new": "{{ mount.target }}",
+        "type": "{{ mount.type }}"
+        },
+      "keep": {
+        "fstype": "{{ mount.fstype }}",
+        "path": "{{ mount.new['dir' if mount.type == 'dev' else 'dev'] }}"
+        }
+      }
+
+
+- name: "remount renamed devices on their old mountpoints and directories with new names"
+  mount:
+    path: "{{ mount.new.dir }}"
+    src: "{{ mount.new.dev }}"
+    fstype: "{{ mount.fstype }}"
+    state: mounted
+  loop: "{{ ( devices + directories ) | sort(attribute='old.dir') }}"
+  loop_control:
+    loop_var: mount
+    label: "{{ mount.target }}"
