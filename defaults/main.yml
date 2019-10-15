@@ -23,7 +23,45 @@
 # uninstall, configure/unconfigure, start/stop, present/absent, create/destroy,
 # add/remove, and so on.
 #
-filesystems__action: setup
+filesystems__action: "setup"
+
+
+################################################################################
+## filesystems__behaviour
+#
+# This is also a behavioural variable that defines HOW the role will work.
+# If 'serial' (the default), filesystems will be processed in parallel, i.e.
+# all LV will be created, then all FS, then all mounts and so on. This mode is
+# the most efficient.
+# If 'sequential', filesystems will be processed sequentially, i.e. all tasks
+# will be performed to setup/unset a filesystem, then all tasks for the next
+# filesystem and so on.
+#
+filesystems__behaviour: "serial"
+
+
+################################################################################
+## filesystems__update_paths
+#
+# When set to True, this variable allows one to update paths of Logical Volumes
+# or their mountpoints if for an active mount, one (and only one) of the LV name
+# or directory path has changed in filesystems__list.
+#
+filesystems__update_paths: True
+
+
+################################################################################
+## filesystems__parents
+#
+# Dictionnary describing properties to apply to mountpoint's parent directories
+# if they have to be created. Example:
+#
+#filesystems__parents:
+#  owner: www-data
+#  group: www-data
+#  mode: 0750
+#
+filesystems__parents: {}
 
 
 ################################################################################

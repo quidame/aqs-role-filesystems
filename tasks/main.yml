@@ -4,15 +4,35 @@
 
 
 # The check points are developped in a dedicated file. Their purpose is to fail
-# as soon as possible in case some conditions (OS compatibility or mandatory
-# parameters)
+# as soon as possible in case one of the conditions (OS compatibility or type,
+# format or value of mandatory variables) are unmet.
 - import_tasks: checkpoints.yml
-  tags:
-    - never
-    - debug
 
 
-# Supported actions are:
-# - setup
-# - unset
-- import_tasks: "{{ filesystems__action }}.yml"
+# This is to allow dual mode support: serialization and sequentialization
+#
+# - serialization
+#   Each task is applied to all listed filesystems at once.
+#   - 1st task: all filesystems
+#   - 2nd task: all filesystems
+#   For example: create all LV, then create all FS, then mount all FS
+#
+# - sequentialization
+#   Only one filesystem is set/unset at a time.
+#   - 1st filesystem: all tasks
+#   - 2nd filesystem: all tasks
+#   For example: fully setup a filesystem, then fully setup the next one...
+#
+# The sequential mode is more suitable for very complicated things, and serial
+# mode is faster.
+#
+# Supported behaviours are:
+# - serial
+# - sequential
+- import_tasks: "{{ filesystems__behaviour }}.yml"
+  vars:
+    # The list is sorted against the mountpoints to ensure nested mounts are
+    # done in the right order and unmounted in reverse order.
+    _setup_list_: "{{ filesystems__list | sort(attribute='path') }}"
+    _unset_list_: "{{ filesystems__list | sort(attribute='path') | reverse | list }}"
+    __finalist__: "{{ _setup_list_ if filesystems__action == 'setup' else _unset_list_ }}"

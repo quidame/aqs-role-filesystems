@@ -1,0 +1,34 @@
+---
+# role: filesystems
+# file: tasks/sequential.yml
+
+
+# By looping over a tasks file, all tasks are run for an iteration, then all
+# tasks are run for the next iteration, etc. In serial.yml, '__internal__' is
+# bound to the full list (filesystems__list, sorted or reverse-sorted) instead.
+#
+# Here we will transform:
+# [
+#   { "path": "/opt/foobar", "lv": "foobar" },
+#   { "path": "/srv/foo/bar", "lv": "foo-bar" }
+# ]
+#
+# into:
+# [
+#   [ { "path": "/opt/foobar", "lv": "foobar" } ],
+#   [ { "path": "/srv/foo/bar", "lv": "foo-bar" } ]
+# ]
+#
+# and use resulting lists of single dictionnaries, each as the main list itself
+# the tasks setup.yml or unset.yml will iterate over.
+#
+- name: "include tasks in a loop to process filesystems sequentially"
+  include_tasks: action.yml
+  loop: |
+    [
+      {% for d in __finalist__ %}
+      [ {{ d }} ]{{ '' if loop.last else ',' }}
+      {% endfor %}
+    ]
+  loop_control:
+    loop_var: __internal__

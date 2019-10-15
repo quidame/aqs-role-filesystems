@@ -1,7 +1,7 @@
 # filesystems
 
 Ansible role to setup or unset filesystems, as well as their underlying Logical
-Volumes.
+Volumes, their mountpoints and their parent directories.
 
 This role is a piece of (*yet another*) [Ansible Quick Starter](/aqs-common)
 (**AQS**).
@@ -20,12 +20,18 @@ The main action the role is called for. Choices are `setup` (the default) and
 filesystems__action: unset
 ```
 
+This variable defines the behaviour of the role when processing the filesystems
+list: `serial` (the default) or `sequential`.
+```yaml
+filesystems__behaviour: sequential
+```
+
 A list of dictionnaries describing filsystems to setup or unset.
 ```yaml
 filesystems__list:
   - path:      MANDATORY - No default  - modules: mount, file
     lv:        MANDATORY - No default  - modules: lvol (filesystem, mount)
-    vg:        Defaults to 'data_vg'   - modules: lvol (filesystem, mount)
+    vg:        Defaults to 'vg0'       - modules: lvol (filesystem, mount)
     size:      Defaults to '512M'      - modules: lvol
     fstype:    Defaults to 'ext4'      - modules: filesystem, mount
     force:     No default - OMITTED    - modules: lvol, filesystem, file

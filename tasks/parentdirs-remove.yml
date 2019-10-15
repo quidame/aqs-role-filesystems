@@ -3,11 +3,11 @@
 # file: tasks/parentdirs-remove.yml
 #
 # Tasks to remove parent directories of mountpoints after unsetting them.
-# Each task should be clearly named, with no inventory variable in the name.
 
 
 # We need to build a list of directories from the list of mountpoints. The
-# directories we want to list are the parents of all mountpoints, Example:
+# directories we want to remove are the parents of all mountpoints, except
+# first level directories (/opt, /srv and so on). Example:
 #
 # mountpoints:
 #   - /var/foo
@@ -19,13 +19,10 @@
 #   - /var/foo/bar/baz
 #   - /var/foo/bar
 #   - /var/foo
-#   - /var
 #   - /opt/foo/bar
 #   - /opt/foo
-#   - /opt
 #   - /foo/bar/var
 #   - /foo/bar
-#   - /foo
 #
 # Then stat will help to find which are removable.
 
@@ -43,7 +40,7 @@
     # mountpoint.
     templist: |
       [
-        {% for p in filesystems__mountpoints %}{% for i in range(0, p.split('/')|length-2) %}
+        {% for p in mount_points %}{% for i in range(0, p.split('/')|length-2) %}
         "{{ p | regex_replace('(/[^/]+){%s}$' % i, '') }}"
         {{ '' if loop.last else ',' }}{% endfor %}
         {{ '' if loop.last else ',' }}{% endfor %}
@@ -52,10 +49,12 @@
 
 # Prevent errors on mountpoints and ignore errors on non-empty directories. So,
 # the task is passing through, and only directories actually removed are stated
-# as chahnged. Here, tasks that are marked OK (unfailed, unchanged, unskipped)
+# as changed. Here, tasks that are marked OK (unfailed, unchanged, unskipped)
 # do not mean that the directory was already removed, but that the state of the
 # target remains unchanged. The directory is still there, and this is not an
-# error !!!
+# error !!! A 'when' conditional statement could be useful here to explicitly
+# show them as skipped instead of unchanged, but this needs to know the result
+# in advance :)
 - name: "remove ascending empty directories"
   shell: |
     mountpoint {{ dir }} ||

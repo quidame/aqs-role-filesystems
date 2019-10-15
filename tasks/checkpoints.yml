@@ -3,39 +3,47 @@
 # file: tasks/checkpoints.yml
 
 
-# Display the data structure of the main variable
-- name: "display main variable"
-  debug:
-    var: filesystems__list
-
-
 # This is intended to prevent late errors by catching common cases of failure.
 # 1. OS compatibility
-# 2. Mandatory parameters and their expected formats or values
+# 2. Mandatory parameters and their expected types, formats or values
 - name: "check point"
   assert:
     that: |
       {% set list = 'filesystems__list' %}
       [
-        '( ansible_distribution in ["Debian"] and ansible_distribution_major_version is version("9", ">=") ) or
-         ( ansible_distribution in ["Redhat"] and ansible_distribution_major_version is version("6", ">=") )'
-      ] + [
+        {# Check OS compatibility #}
+        '( ansible_distribution in ["Debian"] and ansible_distribution_version is version("9.0", ">=") ) or \
+         ( ansible_distribution in ["Redhat"] and ansible_distribution_version is version("7.0", ">=") )',
+        {# Check value (keyword) of role variables controlling its behaviour #}
         'filesystems__action in ["setup", "unset"]',
-        'filesystems__mountpoints == {{ list }} | json_query("[*].path")'
-      ] + [
+        'filesystems__behaviour in ["serial", "sequential"]',
+        {# check type of mandatory variables filled by user #}
+        'filesystems__list | type_debug == "list"',
+        'filesystems__parents | type_debug == "dict"',
+        {# Some variables are set internally and MUST NOT be set from commmandline, set_fact, play vars... #}
+        'mount_points is undefined',
+        '_setup_list_ is undefined',
+        '_unset_list_ is undefined',
+        '__finalist__ is undefined',
+        '__internal__ is undefined',
+        {# Check mandatory variables and their format/type for all members of the list #}
         {% for fs in filesystems__list %}
         {% set i = loop.index - 1 %}
-        '{{ list }}.{{ i }}.path is defined',
-        '{{ list }}.{{ i }}.path is not match("/.*[^/]$")',
-        '{{ list }}.{{ i }}.lv is defined',
-        '{{ list }}.{{ i }}.lv is not search("/")',
-        '{{ list }}.{{ i }}.vg is defined or filesystems__vg is defined',
-        '{{ list }}.{{ i }}.size is defined or filesystems__size is defined',
-        '{{ list }}.{{ i }}.size is undefined or {{ list }}.{{ i }}.size is match("[1-9]+([MmGgTt]|%VG)$")',
-        '{{ list }}.{{ i }}.fstype is defined or filesystems__fstype is defined',
-        '{{ list }}.{{ i }}.fstype is undefined or {{ list }}.{{ i }}.fstype in filesystems__fstypes|default([]) + ["ext4", "xfs"]'
+        '{{ list }}.{{ i }}.path is regex("^(/[^/]+){2,}/?$")', {# No first level directory, supports trailing / #}
+        '{{ list }}.{{ i }}.lv is regex("^[^/]+$")',            {# The name, not the path #}
+        '{{ list }}.{{ i }}.vg is defined or filesystems__vg is regex("^[^/]+$")',
+        '{{ list }}.{{ i }}.vg is undefined or {{ list }}.{{ i }}.vg is regex("^[^/]+$")',
+        '{{ list }}.{{ i }}.size is defined or filesystems__size is regex("^[1-9]+([MmGgTt]|%VG)$")',
+        '{{ list }}.{{ i }}.size is undefined or {{ list }}.{{ i }}.size is regex("^[1-9]+([MmGgTt]|%VG)$")',
+        '{{ list }}.{{ i }}.fstype is defined or filesystems__fstype in filesystems__fstypes|default([]) + ["ext4", "xfs"]',
+        '{{ list }}.{{ i }}.fstype is undefined or {{ list }}.{{ i }}.fstype in filesystems__fstypes|default([]) + ["ext4", "xfs"]',
+        '{{ list }}.{{ i }}.passno is undefined or {{ list }}.{{ i }}.passno in [0, 2, "0", "2"]'
         {{ '' if loop.last else ',' }}{% endfor %}
-      ] + [
-        'filesystems__fstype is undefined or filesystems__fstype in filesystems__fstypes|default([]) + ["ext4","xfs"]',
-        'filesystems__size is undefined or filesystems__size is match("[1-9]+([MmGgTt]|%VG)$")'
       ]
+
+
+# Display the data structure of the main variable
+- name: "show filesystems to {{ filesystems__action }}"
+  debug:
+    var: filesystems__list
+    verbosity: 2

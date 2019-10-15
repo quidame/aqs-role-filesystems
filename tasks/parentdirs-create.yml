@@ -3,7 +3,6 @@
 # file: tasks/parentdirs-create.yml
 #
 # Tasks to create parent directories of mountpoints before setting them.
-# Each task should be clearly named, with no inventory variable in the name.
 
 
 # We need to build a list of directories from the list of mountpoints. The
@@ -49,12 +48,18 @@
     # List nested mountpoints, i.e. elements of the list that include another,
     # such as in [ "/srv", "/srv/tftp" ], /srv/tftp is a nested mount.
     templist0: |
-      [ {% for i in filesystems__mountpoints | product(filesystems__mountpoints) | list if i.0 is match(i.1 + '/') %}
+      [ {% for i in mount_points | product(mount_points) | list if i.0 is match(i.1 + '/') %}
         "{{ i.0 }}"{{ '' if loop.last else ',' }}{% endfor %} ]
-    # Decompose the initial path to all its elements
+    # Decompose the full path to its components. Nested mounts are excluded
+    # so the next step will not create directories that will be hidden by
+    # the parent mount. For example, for [ "/srv", "/srv/www/local" ],
+    # discard creation of /srv/www as it will disappear when mounting /srv.
+    # Note that this may need additional tasks apart of this role to set
+    # properties of /srv/www, since it will be created by the mount module
+    # when creating /srv/www/local mountpoint with unsettable umask.
     templist: |
       [
-        {% for p in filesystems__mountpoints | difference(templist0) %}
+        {% for p in mount_points | difference(templist0) %}
         {% for i in range(1, p.split('/')|length-1) %}
         "{{ p | regex_replace('(/[^/]+){%s}$' % i, '') }}"
         {{ '' if loop.last else ',' }}{% endfor %}

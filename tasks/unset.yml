@@ -6,6 +6,11 @@
 # Each task should be clearly named, with no inventory variable in the name.
 
 
+- name: "include tasks to change paths of devices or mountpoints"
+  include_tasks: rename.yml
+  when: filesystems__update_paths | bool
+
+
 # Some services may still write or read into files, or a user may stay
 # somewhere into the tree, making the mountpoint busy and leading the
 # umount command to fail. Killing all processes accessing the filesystem
@@ -17,7 +22,7 @@
     fuser --kill \
     -{{ 'KILL' if fs.force|default(filesystems__force|default(False))|bool else 'TERM' }} \
     --ismountpoint {{ fs.path }}
-  loop: "{{ filesystems__list }}"
+  loop: "{{ __internal__ }}"
   loop_control:
     loop_var: fs
     # As the filesystems__list dictionnaries support a lot of keys, we
@@ -34,7 +39,7 @@
   mount:
     path: "{{ fs.path }}"
     state: absent
-  loop: "{{ filesystems__list | sort(attribute='path') | reverse | list }}"
+  loop: "{{ __internal__ }}"
   loop_control:
     loop_var: fs
     label: "{{ fs.path }}"
@@ -54,7 +59,7 @@
     get_checksum: no
     get_mime: no
     path: "/dev/{{ fs.vg | default(filesystems__vg) }}/{{ fs.lv }}"
-  loop: "{{ filesystems__list }}"
+  loop: "{{ __internal__ }}"
   loop_control:
     loop_var: fs
     label: "/dev/{{ fs.vg | default(filesystems__vg) }}/{{ fs.lv }}"
@@ -82,7 +87,7 @@
     vg: "{{ lv.vg | default(filesystems__vg) }}"
     state: absent
     force: yes
-  loop: "{{ filesystems__list }}"
+  loop: "{{ __internal__ }}"
   loop_control:
     loop_var: lv
     label: "{{ lv.vg | default(filesystems__vg) }}/{{ lv.lv }}"

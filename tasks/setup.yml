@@ -6,6 +6,11 @@
 # Each task should be clearly named, with no inventory variable in the name.
 
 
+- name: "include tasks to change paths of devices or mountpoints"
+  include_tasks: rename.yml
+  when: filesystems__update_paths | bool
+
+
 # This block is added to work around restrictive umasks and grant access to
 # the filesystem (to be created) to its owner. Common practices (but not all
 # good) are to set parent directories:
@@ -21,7 +26,7 @@
 # than their parent mountpoint, but it seems to be harder to implement
 - name: "include tasks to create parent directories with non-default properties"
   include_tasks: parentdirs-create.yml
-  when: filesystems__parents|default({}) != {}
+  when: filesystems__parents != {}
 
 
 # Only one parameter is mandatory, the LV name. Others are either omitted if
@@ -38,7 +43,7 @@
     resizefs: "{{ lv.resizefs  | default(filesystems__resizefs  | default(omit)) }}"
     shrink:   "{{ lv.shrink    | default(filesystems__shrink    | default(omit)) }}"
     state: present
-  loop: "{{ filesystems__list }}"
+  loop: "{{ __internal__ }}"
   loop_control:
     loop_var: lv
     # As the filesystems__list dictionnaries support a lot of keys, we
@@ -56,7 +61,7 @@
     force:    "{{ fs.force     | default(filesystems__force     | default(omit)) }}"
     opts:     "{{ fs.mkfs_opts | default(filesystems__mkfs_opts | default(omit)) }}"
     resizefs: "{{ fs.resizefs  | default(filesystems__resizefs  | default(omit)) }}"
-  loop: "{{ filesystems__list | sort(attribute='lv') }}"
+  loop: "{{ __internal__ }}"
   loop_control:
     loop_var: fs
     label: {
@@ -72,9 +77,7 @@
 # is always this path scheme that is exposed by the kernel in /proc/mounts and
 # by other tools such as lsblk and blkid, so it should be considered canonical
 # to populate fstab with. Also, directory names are made canonical too for the
-# same raeson.
-# The list is sorted against the mountpoints to ensure nested mounts are done in
-# the right order.
+# same reason.
 - name: "mount filesystems and register them in fstab"
   mount:
     path:   "{{ fs.path | regex_replace('/+$', '') }}"
@@ -85,7 +88,7 @@
     passno: "{{ fs.passno    | default(filesystems__passno    | default(omit)) }}"
     backup: "{{ fs.backup    | default(filesystems__backup    | default(omit)) }}"
     state: mounted
-  loop: "{{ filesystems__list | sort(attribute='path') }}"
+  loop: "{{ __internal__ }}"
   loop_control:
     loop_var: fs
     label: {
@@ -109,6 +112,6 @@
     setype:  "{{ dir.setype  | default(filesystems__setype  | default(omit)) }}"
     seuser:  "{{ dir.seuser  | default(filesystems__seuser  | default(omit)) }}"
     state: directory
-  loop: "{{ filesystems__list }}"
+  loop: "{{ __internal__ }}"
   loop_control:
     loop_var: dir

@@ -1,0 +1,11 @@
+---
+# role: filesystems
+# file: tasks/serial.yml
+
+
+# Here, '__internal__' is bound to '__finalist__', the complete list of fs
+# sorted for setup or reverse-sorted for unset. In sequential.yml, '__internal__'
+# is bound to a single item of the same list of fs.
+- import_tasks: action.yml
+  vars:
+    __internal__: "{{ __finalist__ }}"

@@ -7,11 +7,3 @@
 #
 # These variables, if any, must follow the same naming rules than defined in
 # defaults/main.yml.
-
-
-################################################################################
-## filesystems__mountpoints
-#
-# Internal variable - do not override
-#
-filesystems__mountpoints: "{{ filesystems__list | json_query('[*].path') }}"
