@@ -2,19 +2,20 @@
 # role: filesystems
 # file: tasks/unset.yml
 #
-# Tasks to unset filesystems.
-# Each task should be clearly named, with no inventory variable in the name.
+# Tasks to unset filesystems as well as their underlying Logical Volumes.
 
 
 # This will compare running state (ansible_mounts) with user input variable
 # (edf_filesystem_manage_fslist) to know if something is to be renamed. This is the first
 # step and builds the variable _fs_rename_.
 # after
+#
 - import_tasks: cross-facts.yml
 
 
 # The only way to keep consistency when changing the 'path' or the 'lv' value
 # is to change it on the host, or fail as soon as possible if not doable.
+#
 - name: "include tasks to change paths of devices or mountpoints"
   include_tasks: rename.yml
   when:
@@ -28,6 +29,7 @@
 # will prevent this. This doesn't support cases such as:
 # - a directory on the mounted filesystem is itself an active mount
 # - a file on the mounted filesystem is associated to a loop device
+#
 - name: "kill remaining processes accessing filesystems"
   command: |
     fuser --kill \
@@ -46,6 +48,7 @@
 
 # The list is reverse sorted against the mountpoints to ensure nested mounts
 # are undone in the right order.
+#
 - name: "unmount Filesystems"
   mount:
     path: "{{ _fs_item.path }}"
@@ -64,6 +67,7 @@
 # inherit an already configured fs and:
 # - not be able to mkfs on it, unless using force=yes
 # - get a corrupted fs because LV size < FS size
+#
 - name: "stat filesystems that could be wiped"
   stat:
     follow: yes
@@ -97,6 +101,7 @@
 
 
 # At this step, we can force the removal of the LV without risk.
+#
 - name: "remove Logical Volumes"
   lvol:
     lv: "{{ _fs_item.lv }}"
@@ -113,6 +118,7 @@
 
 # The mountpoint has been removed. Maybe its parent is empty now, so remove it
 # too, and its parent, etc.
+#
 - import_tasks: parents-unset.yml
   vars:
     __mountpoints__: "{{ __fs__dictlist__ | json_query('[*].path') }}"
