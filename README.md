@@ -171,7 +171,7 @@ Setup two filesystems on JBoss servers, with both values specific to the fs
 - hosts: servers
   roles:
     - role: filesystems
-      filesystems__action: unset
+      filesystems__action: setup
       filesystems__fslist:
         - path: "{{ jboss_app_dir_path }}"
           size: "{{ jboss_app_vol_size }}"
