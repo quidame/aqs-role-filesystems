@@ -1,0 +1,84 @@
+---
+# role: filesystems
+# file: tasks/checkpoint.yml
+
+
+# This is intended to prevent late errors by catching common cases of failure.
+# 1. OS compatibility
+# 2. Mandatory parameters and their expected types, formats or values
+# 3. Internal variables that MUST NOT be overridden from commandline and MUST
+#    NOT conflict with inherited loop_var from another role, etc.
+#
+- name: "check point : role prerequisites and requirements"
+  assert:
+    that: |
+      [
+        {# Check OS compatibility and ansible version (should match meta/) }#}
+        "( ansible_distribution in ['Debian'] and ansible_distribution_version is version('9.0', '>=') ) or \
+         ( ansible_distribution in ['Redhat'] and ansible_distribution_version is version('7.0', '>=') )",
+        "ansible_version.full is version('2.7', '>=')",
+
+        {# Check value (keyword) of role variables controlling its behaviour }#}
+        "filesystems__action in ['setup', 'unset']",
+        "filesystems__behaviour in ['serial', 'sequential']",
+
+        {# check type of mandatory variables filled by user }#}
+        "filesystems__fslist | type_debug == 'list'",
+        "filesystems__parents | type_debug == 'dict'",
+
+        {# Some variables are set and used internally and MUST NOT be overridden
+           from commmandline. Also note that by checking they are undefined, we
+           assume that they're left undefined after the role play, otherwise the
+           role could not be played twice or more in the same playbook. So, the
+           following variables must not be set in set_fact nor in register. }#}
+
+        {# 1. Variable set either in task vars or in loop_var, depending on the
+              filesystems__behaviour value. }#}
+        "__fs__dictlist__ is undefined",
+
+        {# 2. Variables set in task vars }#}
+        "__tempvar0__ is undefined",
+        "__tempvar1__ is undefined",
+        "__tempvar2__ is undefined",
+        "__mountpoints__ is undefined",
+        "__fslist_setup__ is undefined",
+        "__fslist_unset__ is undefined",
+        "__fslist_order__ is undefined",
+        "fstab_dicts is undefined",
+        "fstab_assertions is undefined",
+        "fstab_devicelinks is undefined",
+        "fstab_filesystems is undefined",
+        "fstab_mountpoints is undefined",
+
+        {# 3. Variables set in loop_var }#}
+        "_fs_item is undefined",
+        "_fs_parents_item is undefined",
+        "_fs_rename_item is undefined",
+        "fstab_item is undefined",
+
+        {# Check mandatory variables and their format/type for all dicts of the
+           list. By looping over the index (i) we can evaluate and display the
+           symbolic path of the variable instead of its content (the dictionary
+           itself), keeping assertions readable in case of error. }#}
+        {% set _fs_ = 'filesystems__fslist' %}
+        {% for i in range(0, filesystems__fslist | length - 1) %}
+        "{{ _fs_ }}.{{ i }} | type_debug == 'dict'",
+        "{{ _fs_ }}.{{ i }}.path is regex('^(/[^/]+){2,}/?$')", {# No first level directory, supports trailing / }#}
+        "{{ _fs_ }}.{{ i }}.lv is regex('^[^/]+$')",            {# The name, not the path }#}
+        "{{ _fs_ }}.{{ i }}.vg is defined or filesystems__default_vg is regex('^[^/]+$')",
+        "{{ _fs_ }}.{{ i }}.vg is undefined or {{ _fs_ }}.{{ i }}.vg is regex('^[^/]+$')",
+        "{{ _fs_ }}.{{ i }}.size is defined or filesystems__default_size is regex('^[1-9]+([MmGgTt]|%VG)$')",
+        "{{ _fs_ }}.{{ i }}.size is undefined or {{ _fs_ }}.{{ i }}.size is regex('^[1-9]+([MmGgTt]|%VG)$')",
+        "{{ _fs_ }}.{{ i }}.fstype is defined or filesystems__default_fstype in filesystems__fstypes|default([]) + ['ext4', 'xfs']",
+        "{{ _fs_ }}.{{ i }}.fstype is undefined or {{ _fs_ }}.{{ i }}.fstype in filesystems__fstypes|default([]) + ['ext4', 'xfs']",
+        "{{ _fs_ }}.{{ i }}.passno is undefined or {{ _fs_ }}.{{ i }}.passno in [0, 2, '0', '2']",
+        "{{ _fs_ }}.{{ i }}.passno is defined or filesystems__default_passno is undefined or filesystems__default_passno in [0, 2, '0', '2']"
+        {{ '' if loop.last else ',' }}{% endfor %}
+      ]
+
+
+# Display the data structure of the main variable
+- name: "show filesystems to {{ filesystems__action }}"
+  debug:
+    var: filesystems__fslist
+    verbosity: 2

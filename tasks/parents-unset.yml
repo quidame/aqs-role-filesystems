@@ -1,0 +1,87 @@
+---
+# role: filesystems
+# file: tasks/parents-unset.yml
+#
+# Tasks to remove parent directories of mountpoints after unsetting them.
+
+
+# We need to build a list of directories from the list of mountpoints. The
+# directories we want to remove are the parents of all mountpoints, except
+# first level directories (/opt, /srv and so on). Example:
+#
+# mountpoints:
+#   - /var/foo
+#   - /var/foo/bar/baz
+#   - /opt/foo/bar
+#   - /foo/bar/var
+#
+# directory list:
+#   - /var/foo/bar/baz
+#   - /var/foo/bar
+#   - /var/foo
+#   - /opt/foo/bar
+#   - /opt/foo
+#   - /foo/bar/var
+#   - /foo/bar
+#
+# Then stat will help to find which are removable.
+
+
+- name: "stat directories that could be removed"
+  stat:
+    path: "{{ _fs_parents_item }}"
+  loop: "{{ __tempvar0__ | sort | unique | reverse | list }}"
+  loop_control:
+    loop_var: _fs_parents_item
+  register: _fs_parents_stat_
+  vars:
+    # Get the complete list of all directories for each mountpoint, including
+    # the mp itself.  The nested loop is looping over the depth of the given
+    # mountpoint.
+    __tempvar0__: |
+      [
+        {% for m in __mountpoints__ %}
+        {% for i in range(0, m.split('/') | length - 2) %}
+        "{{ m | regex_replace('(/[^/]+){%s}$' % i, '') }}"
+        {{ '' if loop.last else ',' }}{% endfor %}
+        {{ '' if loop.last else ',' }}{% endfor %}
+      ]
+
+
+# Prevent errors on mountpoints and ignore errors on non-empty directories. So,
+# the task is passing through, and only directories actually removed are stated
+# as changed. Here, tasks that are marked OK (unfailed, unchanged, unskipped)
+# do not mean that the directory was already removed, but that the state of the
+# target remains unchanged. The directory is still there, and this is not an
+# error !!! A 'when' conditional statement could be useful here to explicitly
+# show them as skipped instead of unchanged, but this needs to know the result
+# in advance :)
+#
+- name: "remove ascending empty directories"
+  shell: |
+    mountpoint {{ _fs_parents_item }} ||
+    rmdir --verbose {{ _fs_parents_item }}
+  loop: "{{ __tempvar0__ }}"
+  loop_control:
+    loop_var: _fs_parents_item
+  register: _fs_parents_rmdir_
+  failed_when:
+    - _fs_parents_rmdir_.rc != 0
+    - _fs_parents_rmdir_.stderr is not search('not empty$')
+  changed_when:
+    - _fs_parents_rmdir_.rc == 0
+    - _fs_parents_rmdir_.stdout is not search('is a mountpoint$')
+  environment:
+    LANG: C
+  vars:
+    # Dirs with more than one subdir are skipped, as well as first level dirs
+    # (/opt, /srv, /var, ...)
+    __tempvar0__: |
+      [
+        {% for s in _fs_parents_stat_.results if
+          s.stat.exists and s.stat.nlink in [2,3] and s._fs_parents_item is not match( '/[^/]*$' ) %}
+        "{{ s._fs_parents_item }}"{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+  notify:
+    - validate_fstab

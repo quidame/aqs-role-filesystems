@@ -7,3 +7,36 @@
 #
 # These variables, if any, must follow the same naming rules than defined in
 # defaults/main.yml.
+
+
+################################################################################
+## filesystems__behaviour
+#
+# This is also a behavioural variable that defines HOW the role will work.
+# If 'serial' (the default), filesystems will be processed in parallel, i.e.
+# all LV will be created, then all FS, then all mounts and so on. This mode is
+# the most efficient.
+# If 'sequential', filesystems will be processed sequentially, i.e. all tasks
+# will be performed to setup/unset a filesystem, then all tasks for the next
+# filesystem and so on.
+#
+filesystems__behaviour: "serial"
+
+
+################################################################################
+## filesystems__update_paths
+#
+# When set to True, this variable allows one to update paths of Logical Volumes
+# or their mountpoints if for an active mount, one (and only one) of the LV name
+# or directory path has changed in filesystems__fslist.
+#
+filesystems__update_paths: True
+
+
+################################################################################
+## filesystems__validate
+#
+# When this variable is set to True, the role performs a validation of fstab
+# before ending. Defaults to True.
+#
+filesystems__validate: True

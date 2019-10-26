@@ -14,12 +14,90 @@
 # filesystems__login: admin
 # filesystems__base_url: https://filesystems.qssdk.lab
 
+
 ################################################################################
 ## filesystems__action
 #
 # Define the main behaviour of the role. Valid values are 'setup' (the default)
 # and 'unset'.  Depending of the role scope, this may be understood as install/
-# uninstall, configure/unconfigure, start/stop, present/absent, create/remove,
-# and so on.
+# uninstall, configure/unconfigure, start/stop, present/absent, create/destroy,
+# add/remove, and so on.
 #
-#filesystems__action: setup
+filesystems__action: "setup"
+
+
+################################################################################
+## filesystems__behaviour
+## filesystems__update_paths
+## filesystems__validate
+#
+# Implemented in vars/main.yml to not be too easily overridden (i.e. can't be
+# inventory variables).
+
+
+################################################################################
+## filesystems__fslist
+#
+# Define the list of filesystems to setup through a list of dictionnaries, with
+# variables matching parameters of ansible modules: lvol, filesystem, mount and
+# file, except the 'opts' parameter, that is common to the three modules, but
+# with a non-sharable value.
+#
+# Example:
+#filesystems__fslist:
+#  - path: /srv/mirror
+#    vg: data02
+#    lv: srv.mirror
+#    size: 500G
+#    fstype: xfs
+#    owner: apt-mirror
+#    group: apt-mirror
+#  - path: /srv/tftp
+#    vg: data02
+#    lv: srv.tftp
+#
+filesystems__fslist: []
+
+
+################################################################################
+## filesystems__parents
+#
+# Dictionnary describing properties to apply to mountpoint's parent directories
+# if they have to be created. Dictionary keys match the parameters of the file
+# module. Example:
+#
+#filesystems__parents:
+#  owner: www-data
+#  group: www-data
+#  mode: 0750
+#
+filesystems__parents: {}
+
+
+################################################################################
+## filesystems__default_*
+#
+# These are the default values, that are applicable to any FS to setup, if not
+# overridden by the same variables on a per-fs basis in filesystems__fslist.
+#
+filesystems__default_vg: vg0
+filesystems__default_size: 512M
+filesystems__default_fstype: ext4
+#filesystems__default_force:     OMIT
+#filesystems__default_resisefs:  OMIT
+#filesystems__default_lvol_opts: OMIT
+#filesystems__default_pvs:       OMIT
+#filesystems__default_shrink:    OMIT
+#filesystems__default_mkfs_opts: OMIT
+#filesystems__default_backup:    OMIT
+#filesystems__default_dump:      OMIT
+#filesystems__default_mountopts: OMIT
+#filesystems__default_passno:    OMIT
+#filesystems__default_attr:      OMIT
+#filesystems__default_group:     OMIT
+#filesystems__default_mode:      OMIT
+#filesystems__default_owner:     OMIT
+#filesystems__default_selevel:   OMIT
+#filesystems__default_serole:    OMIT
+#filesystems__default_setype:    OMIT
+#filesystems__default_seuser:    OMIT

@@ -1,6 +1,9 @@
+---
 # role: filesystems
 # file: tests/requirements.yml
----
+#
+# Install required ansible roles with: ansible-galaxy install -r requirements.yml
+
 - name: "filesystems"
   src: "https://github.com/quidame/aqs-role-filesystems.git"
   scm: "git"

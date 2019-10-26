@@ -1,0 +1,28 @@
+---
+# role: filesystems
+# file: tasks/normalize-fstab.yml
+#
+# Tasks to normalize /etc/fstab.
+
+
+# '/foo/bar' and '/foo/bar/' don't match. That's all. And neither kernel nor
+# system tools will show directory paths with trailing slashes. So the mount
+# module, with path=/foo/bar and path=/foo/bar/ will create 2 records for
+# the same device, and finally the same mountpoint... Don't worry, this will
+# leave rootfs record (/) untouched.
+#
+- name: "cleanup trailing / in /etc/fstab to avoid duplicates"
+  replace:
+    path: /etc/fstab
+    # Use single quotes to not have to escape the baslashes themselves.
+    regexp: '^(.*[^\s/])/+(\s.*)$'
+    replace: '\1\2'
+  # By the way, the main reason we notify this handler is not to verify the
+  # result of this task, but because we have fixed a non-standard syntax,
+  # we make assumption that other bad things may be found in the file.
+  notify:
+    - validate_fstab
+
+
+# Other things to do here ?
+# - Replace /dev/VG/LV by /dev/mapper/VG-LV ? `mount` module will do it.
