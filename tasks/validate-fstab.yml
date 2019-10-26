@@ -1,0 +1,149 @@
+---
+# role: filesystems
+# file: tasks/validate-fstab.yml
+#
+# Tasks to ensure the host will not be rebooted if it is not rebootable due to
+# inconsistancies in /etc/fstab.
+
+
+# At first, retrieve relevant fstab contents.
+- name: "get list of static mounts recorded in /etc/fstab"
+  command: awk '/^\s*[^#]/ {print $1,$2,$3,$4,$5,$6}' /etc/fstab
+  register: fstab_awk
+  changed_when: false
+
+
+- name: "validate fstab entries"
+  block:
+
+    - name: "track duplicates, unpredictable names and bad fstypes in /etc/fstab"
+      assert:
+        that: "{{ fstab_assertions }}"
+
+
+    - name: "check that all devices and mountpoints recorded in /etc/fstab exist"
+      stat:
+        path: "{{ fstab_item }}"
+        follow: yes
+      loop: "{{ fstab_mountpoints + fstab_devicelinks }}"
+      loop_control:
+        loop_var: fstab_item
+      register: fstab_path
+      failed_when:
+        - ( not fstab_path.stat.exists ) or
+          not ( fstab_path.stat.isdir or fstab_path.stat.isblk )
+      when:
+        # This will skip mountpoint for swap devices but not the device itself,
+        # and skip device for nfs mounts, but not the mountpoint itself.
+        - fstab_item is match('/')
+
+
+    # Perform a real mount call, that is the only way at this step to ensure
+    # the file will not crash the system boot.
+    - name: "validate fstab records by performing actual mount calls (-o remount)"
+      shell: |
+        if mountpoint "{{ fstab_item.mount }}"
+        then mount "{{ fstab_item.mount }}" -o remount
+        else mount "{{ fstab_item.mount }}" && exit 99
+        fi
+      args:
+        warn: false
+      loop: "{{ fstab_dicts }}"
+      loop_control:
+        loop_var: fstab_item
+        label: "{{ fstab_item.mount }}"
+      register: fstab_remount
+      failed_when:  fstab_remount.rc not in [0, 99]
+      changed_when: fstab_remount.rc == 99
+      when:
+        - fstab_item.fstype not in ["swap", "nfs4"]
+
+  rescue:
+
+    - name: "show fstab entries"
+      debug:
+        var: fstab_awk.stdout_lines
+
+    - name: "fail unconditionally due to previous error"
+      fail:
+        msg: "THE SYSTEM FILE /etc/fstab SEEMS TO BE IN BAD SHAPE. \
+          PLEASE FIX IT BEFORE ATTEMPTING TO REBOOT THE SYSTEM, \
+          OTHERWISE YOU MAY EXPERIENCE PROBLEMS AS YOUR SYSTEM \
+          IS NOT GUARANTEED TO BOOT CORRECTLY."
+
+  vars:
+    # Translate flat fstab content into a dictlist with an additional field
+    # (the "link" is to stat devices recorded as UUID=* or LABEL=* in fstab).
+    __tempvar0__: |
+    fstab_dicts: |
+      [
+        {% for fs in fstab_awk.stdout_lines %}{
+          "device":  "{{ fs.split(' ').0 }}",
+          "mount":   "{{ fs.split(' ').1 }}",
+          "fstype":  "{{ fs.split(' ').2 }}",
+          "options": "{{ fs.split(' ').3 }}",
+          "dump":    "{{ fs.split(' ').4 }}",
+          "passno":  "{{ fs.split(' ').5 }}",
+          "link": {% if fs.split( ' ' ).0 is match('UUID=') %}
+            "{{ '/dev/disk/by-uuid/%s' % fs.split(' ').0 | replace('UUID=', '') }}"
+            {% elif fs.split( ' ' ).0 is match('LABEL=') %}
+            "{{ '/dev/disk/by-label/%s' % fs.split(' ').0 | replace('LABEL=', '') }}"
+            {% else %}
+            "{{ fs.split(' ').0 }}"
+            {% endif %}
+        }{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    fstab_filesystems: "{{ fstab_dicts | json_query('[*].device') }}"
+    fstab_mountpoints: "{{ fstab_dicts | json_query('[*].mount') }}"
+    fstab_devicelinks: "{{ fstab_dicts | json_query('[*].link') }}"
+
+    fstab_assertions: |
+      [
+        {###  1. Check for obvious/simple duplicates
+        }#}
+        "( fstab_mountpoints | sort ) == ( fstab_mountpoints | sort | unique )",
+        "( fstab_filesystems | sort ) == ( fstab_filesystems | sort | unique )",
+
+        {###  2. Check for hidden duplicated directories
+                /foo/bar vs /foo/bar/
+        }#}
+        {% for x in fstab_mountpoints %}
+        "'{{ x }}' in fstab_mountpoints and not '{{ x }}/' in fstab_mountpoints",
+        {% endfor %}
+
+        {###  3. Check for hidden duplicated devices
+                /dev/VG/LV vs /dev/mapper/VG-LV
+                Assert that if /dev/mapper/VG-LV is in the list, /dev/VG/LV is
+                not.
+        }#}
+        {% for x in fstab_filesystems if x is match('/dev/mapper/') %}
+        {% set X = '/dev/%s' % ( x | basename | regex_replace( '([^-])-([^-])', '\\1/\\2' ) | regex_replace( '--', '-' ) ) %}
+        "'{{ x }}' in fstab_filesystems and not '{{ X }}' in fstab_filesystems",
+        {% endfor %}
+
+        {###  4. Check for unpredictable names
+                /dev/sdb2, /dev/dm-7, /dev/xvda3, ...
+                Unpredictable names are those of the block devices themselves,
+                in /dev. Symlinks to them (and with predictable names) are all
+                in subdirectories in /dev.
+        }#}
+        {% for x in fstab_devicelinks %}
+        "'{{ x }}' is not match('/dev/[^/]+$')",
+        {% endfor %}
+
+        {###  5. Check for bad filesystem types
+                This will verify that a fstype recorded in fstab matches the one
+                in ansible_mounts for the same mountpoint. Since it is based on
+                ansible_mounts, fstab entries that are not currently mounted are
+                not checked. They will be in a next task by performing a real
+                mount call. This test about fstype is done here because mount
+                command will not raise an error with '-o remount'. So this piece
+                of code and the mount of inactive mountpoints are complementary.
+        }#}
+        {% for x in fstab_dicts | product(ansible_mounts) if x.1.mount == x.0.mount | regex_replace('/+$', '') %}
+        "'{{ x.1.mount }}' == '{{ x.0.mount | regex_replace('/+$', '') }}' and \
+         '{{ x.1.fstype }}' == '{{ x.0.fstype }}'"{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]

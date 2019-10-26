@@ -3,36 +3,80 @@
 # file: tasks/main.yml
 
 
+################################################################################
+# CHECK POINT
+#
 # The check points are developped in a dedicated file. Their purpose is to fail
 # as soon as possible in case one of the conditions (OS compatibility or type,
 # format or value of mandatory variables) are unmet.
-- import_tasks: checkpoints.yml
+#
+- import_tasks: checkpoint.yml
 
 
-# This is to allow dual mode support: serialization and sequentialization
+################################################################################
+# NORMALIZATION
 #
-# - serialization
-#   Each task is applied to all listed filesystems at once.
-#   - 1st task: all filesystems
-#   - 2nd task: all filesystems
-#   For example: create all LV, then create all FS, then mount all FS
+# Normalize /etc/fstab:
+# - remove trailing slashes in directory paths
+#   This will avoid duplicates, since when a record already exists for /foo/bar,
+#   the mount module will create a new one for /foo/bar/ (or the opposite)
+#   leaving the /foo/bar record after removal of the /foo/bar/'s one and THEIR
+#   device !
 #
-# - sequentialization
+- import_tasks: normalize-fstab.yml
+
+
+
+
+################################################################################
+################################################################################
+# SERIAL OR SEQUENTIAL
+#
+# The sequential mode is more suitable for very complicated things (as long as
+# there is no renaming between), and serial mode is faster.
+
+
+################################################################################
+# sequential
+#
 #   Only one filesystem is set/unset at a time.
 #   - 1st filesystem: all tasks
 #   - 2nd filesystem: all tasks
 #   For example: fully setup a filesystem, then fully setup the next one...
 #
-# The sequential mode is more suitable for very complicated things, and serial
-# mode is faster.
-#
-# Supported behaviours are:
-# - serial
-# - sequential
-- import_tasks: "{{ filesystems__behaviour }}.yml"
+- name: "{{ filesystems__action }} filesystems in sequential mode"
+  when: "filesystems__behaviour == 'sequential'"
+  include_tasks: "{{ filesystems__action }}.yml"
+  loop: |
+    [
+      {% for d in __fslist_order__ %}
+      [ {{ d }} ]{{ '' if loop.last else ',' }}
+      {% endfor %}
+    ]
+  loop_control:
+    loop_var: __fs__dictlist__
+    label: { "path": "{{ __fs__dictlist__.0.path }}" }
   vars:
     # The list is sorted against the mountpoints to ensure nested mounts are
     # done in the right order and unmounted in reverse order.
-    _setup_list_: "{{ filesystems__list | sort(attribute='path') }}"
-    _unset_list_: "{{ filesystems__list | sort(attribute='path') | reverse | list }}"
-    __finalist__: "{{ _setup_list_ if filesystems__action == 'setup' else _unset_list_ }}"
+    __fslist_setup__: "{{ filesystems__fslist | sort(attribute='path') }}"
+    __fslist_unset__: "{{ filesystems__fslist | sort(attribute='path') | reverse | list }}"
+    __fslist_order__: "{{ __fslist_setup__ if filesystems__action == 'setup' else __fslist_unset__ }}"
+
+
+################################################################################
+# serial
+#
+#   Each task is applied to all listed filesystems at once.
+#   - 1st task: all filesystems
+#   - 2nd task: all filesystems
+#   For example: create all LV, then create all FS, then mount all FS
+#
+- name: "{{ filesystems__action }} filesystems in serial mode"
+  when: "filesystems__behaviour == 'serial'"
+  include_tasks: "{{ filesystems__action }}.yml"
+  vars:
+    __fslist_setup__: "{{ filesystems__fslist | sort(attribute='path') }}"
+    __fslist_unset__: "{{ filesystems__fslist | sort(attribute='path') | reverse | list }}"
+    __fslist_order__: "{{ __fslist_setup__ if filesystems__action == 'setup' else __fslist_unset__ }}"
+    __fs__dictlist__: "{{ __fslist_order__ }}"

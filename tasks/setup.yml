@@ -2,13 +2,22 @@
 # role: filesystems
 # file: tasks/setup.yml
 #
-# Tasks to setup filesystems.
-# Each task should be clearly named, with no inventory variable in the name.
+# Tasks to setup filesystems as well as their underlying Logical Volumes.
 
 
+# This will compare running state (ansible_mounts) with user input variable
+# (filesystems__fslist) to know if something is to be renamed. This is the
+# first step and builds the variable _fs_rename_.
+- import_tasks: cross-facts.yml
+
+
+# The only way to keep consistency when changing the 'path' or the 'lv' value
+# is to change it on the host, or fail as soon as possible if not doable.
 - name: "include tasks to change paths of devices or mountpoints"
   include_tasks: rename.yml
-  when: filesystems__update_paths | bool
+  when:
+    - _fs_rename_.0 is defined
+    - filesystems__update_paths | bool
 
 
 # This block is added to work around restrictive umasks and grant access to
@@ -25,8 +34,11 @@
 # Another practice could be to create directories with the same properties
 # than their parent mountpoint, but it seems to be harder to implement
 - name: "include tasks to create parent directories with non-default properties"
-  include_tasks: parentdirs-create.yml
-  when: filesystems__parents != {}
+  include_tasks: parents-setup.yml
+  vars:
+    __mountpoints__: "{{ __fs__dictlist__ | json_query('[*].path') }}"
+  when:
+    - filesystems__parents != {}
 
 
 # Only one parameter is mandatory, the LV name. Others are either omitted if
@@ -34,21 +46,23 @@
 # the module are supported, if necessary.
 - name: "create Logical Volumes"
   lvol:
-    lv:       "{{ lv.lv }}"
-    vg:       "{{ lv.vg        | default(filesystems__vg) }}"
-    size:     "{{ lv.size      | default(filesystems__size) }}"
-    force:    "{{ lv.force     | default(filesystems__force     | default(omit)) }}"
-    opts:     "{{ lv.lvol_opts | default(filesystems__lvol_opts | default(omit)) }}"
-    pvs:      "{{ lv.pvs       | default(filesystems__pvs       | default(omit)) }}"
-    resizefs: "{{ lv.resizefs  | default(filesystems__resizefs  | default(omit)) }}"
-    shrink:   "{{ lv.shrink    | default(filesystems__shrink    | default(omit)) }}"
+    lv:       "{{ _fs_item.lv }}"
+    vg:       "{{ _fs_item.vg        | default(filesystems__default_vg) }}"
+    size:     "{{ _fs_item.size      | default(filesystems__default_size) }}"
+    force:    "{{ _fs_item.force     | default(filesystems__default_force     | default(omit)) }}"
+    opts:     "{{ _fs_item.lvol_opts | default(filesystems__default_lvol_opts | default(omit)) }}"
+    pvs:      "{{ _fs_item.pvs       | default(filesystems__default_pvs       | default(omit)) }}"
+    resizefs: "{{ _fs_item.resizefs  | default(filesystems__default_resizefs  | default(omit)) }}"
+    shrink:   "{{ _fs_item.shrink    | default(filesystems__default_shrink    | default(omit)) }}"
     state: present
-  loop: "{{ __internal__ }}"
+  loop: "{{ __fs__dictlist__ }}"
   loop_control:
-    loop_var: lv
-    # As the filesystems__list dictionnaries support a lot of keys, we
-    # keep only the most relevant against the name of the task.
-    label: "{{ lv.vg | default(filesystems__vg) }}/{{ lv.lv }}"
+    loop_var: _fs_item
+    # As the filesystems__fslist dictionnaries support a lot of keys, we keep
+    # only the most relevant against the name of the task.
+    label: "{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+  notify:
+    - validate_fstab
 
 
 # Again, there is only one mandatory parameter, that is the same as above. We
@@ -56,18 +70,20 @@
 # /dev/mapper/VG-LV.
 - name: "create filesystems on Logical Volumes"
   filesystem:
-    dev:      "/dev/{{ fs.vg   | default(filesystems__vg) }}/{{ fs.lv }}"
-    fstype:   "{{ fs.fstype    | default(filesystems__fstype) }}"
-    force:    "{{ fs.force     | default(filesystems__force     | default(omit)) }}"
-    opts:     "{{ fs.mkfs_opts | default(filesystems__mkfs_opts | default(omit)) }}"
-    resizefs: "{{ fs.resizefs  | default(filesystems__resizefs  | default(omit)) }}"
-  loop: "{{ __internal__ }}"
+    dev:      "/dev/{{ _fs_item.vg   | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+    fstype:   "{{ _fs_item.fstype    | default(filesystems__default_fstype) }}"
+    force:    "{{ _fs_item.force     | default(filesystems__default_force     | default(omit)) }}"
+    opts:     "{{ _fs_item.mkfs_opts | default(filesystems__default_mkfs_opts | default(omit)) }}"
+    resizefs: "{{ _fs_item.resizefs  | default(filesystems__default_resizefs  | default(omit)) }}"
+  loop: "{{ __fs__dictlist__ }}"
   loop_control:
-    loop_var: fs
+    loop_var: _fs_item
     label: {
-      "fstype": "{{ fs.fstype | default(filesystems__fstype) }}",
-      "dev": "/dev/{{ fs.vg | default(filesystems__vg) }}/{{ fs.lv }}"
+      "fstype": "{{ _fs_item.fstype | default(filesystems__default_fstype) }}",
+      "dev": "/dev/{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
       }
+  notify:
+    - validate_fstab
 
 
 # This task introduces a new mandatory parameter, that is the absolute path of
@@ -80,38 +96,39 @@
 # same reason.
 - name: "mount filesystems and register them in fstab"
   mount:
-    path:   "{{ fs.path | regex_replace('/+$', '') }}"
-    src:    "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}"
-    fstype: "{{ fs.fstype    | default(filesystems__fstype) }}"
-    opts:   "{{ fs.mountopts | default(filesystems__mountopts | default(omit)) }}"
-    dump:   "{{ fs.dump      | default(filesystems__dump      | default(omit)) }}"
-    passno: "{{ fs.passno    | default(filesystems__passno    | default(omit)) }}"
-    backup: "{{ fs.backup    | default(filesystems__backup    | default(omit)) }}"
+    path: "{{ _fs_item.path | regex_replace('/+$', '') }}"
+    src: "/dev/mapper/{{ _fs_item.vg | default(filesystems__default_vg) | regex_replace('-', '--') }}-{{ _fs_item.lv | regex_replace('-', '--') }}"
+    fstype: "{{ _fs_item.fstype    | default(filesystems__default_fstype) }}"
+    opts:   "{{ _fs_item.mountopts | default(filesystems__default_mountopts | default(omit)) }}"
+    dump:   "{{ _fs_item.dump      | default(filesystems__default_dump      | default(omit)) }}"
+    passno: "{{ _fs_item.passno    | default(filesystems__default_passno    | default(omit)) }}"
+    backup: "{{ _fs_item.backup    | default(filesystems__default_backup    | default(omit)) }}"
     state: mounted
-  loop: "{{ __internal__ }}"
+  loop: "{{ __fs__dictlist__ }}"
   loop_control:
-    loop_var: fs
+    loop_var: _fs_item
     label: {
-      "src": "/dev/mapper/{{ fs.vg | default(filesystems__vg) | regex_replace('-', '--') }}-{{ fs.lv | regex_replace('-', '--') }}",
-      "path": "{{ fs.path | regex_replace('/+$', '') }}"
+      "src": "/dev/mapper/{{ _fs_item.vg | default(filesystems__default_vg) | regex_replace('-', '--') }}-{{ _fs_item.lv | regex_replace('-', '--') }}",
+      "path": "{{ _fs_item.path | regex_replace('/+$', '') }}"
       }
   notify:
     - reload_systemd
+    - validate_fstab
 
 
 # Again, we just reuse the same mandatory parameter as above.
 - name: "update access permissions to the roots of filesystems"
   file:
-    path:    "{{ dir.path | regex_replace('/+$', '') }}"
-    attr:    "{{ dir.attr    | default(filesystems__attr    | default(omit)) }}"
-    mode:    "{{ dir.mode    | default(filesystems__mode    | default(omit)) }}"
-    owner:   "{{ dir.owner   | default(filesystems__owner   | default(omit)) }}"
-    group:   "{{ dir.group   | default(filesystems__group   | default(omit)) }}"
-    selevel: "{{ dir.selevel | default(filesystems__selevel | default(omit)) }}"
-    serole:  "{{ dir.serole  | default(filesystems__serole  | default(omit)) }}"
-    setype:  "{{ dir.setype  | default(filesystems__setype  | default(omit)) }}"
-    seuser:  "{{ dir.seuser  | default(filesystems__seuser  | default(omit)) }}"
+    path:    "{{ _fs_item.path | regex_replace('/+$', '') }}"
+    attr:    "{{ _fs_item.attr    | default(filesystems__default_attr    | default(omit)) }}"
+    mode:    "{{ _fs_item.mode    | default(filesystems__default_mode    | default(omit)) }}"
+    owner:   "{{ _fs_item.owner   | default(filesystems__default_owner   | default(omit)) }}"
+    group:   "{{ _fs_item.group   | default(filesystems__default_group   | default(omit)) }}"
+    selevel: "{{ _fs_item.selevel | default(filesystems__default_selevel | default(omit)) }}"
+    serole:  "{{ _fs_item.serole  | default(filesystems__default_serole  | default(omit)) }}"
+    setype:  "{{ _fs_item.setype  | default(filesystems__default_setype  | default(omit)) }}"
+    seuser:  "{{ _fs_item.seuser  | default(filesystems__default_seuser  | default(omit)) }}"
     state: directory
-  loop: "{{ __internal__ }}"
+  loop: "{{ __fs__dictlist__ }}"
   loop_control:
-    loop_var: dir
+    loop_var: _fs_item

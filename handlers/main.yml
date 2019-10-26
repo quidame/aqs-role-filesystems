@@ -7,8 +7,33 @@
 # anytime with:
 # - meta: flush_handlers
 
+
+# Regather this fact as we rely on it to select valid candidates for renaming.
+- name: "regather fact 'ansible_mounts'"
+  setup:
+    filter: ansible_mounts
+  listen:
+    - regather_mounts
+
+
+# Systemd mount Units (path-to-mountpoint.mount) are auto generated using
+# running state (/proc/self/mounts) and static table (/etc/fstab). This
+# will update them.
 - name: "update Systemd mount units"
   systemd:
     daemon_reload: yes
   listen:
     - reload_systemd
+  when:
+    - "ansible_service_mgr == 'systemd'"
+
+
+# If changes occur, ensure the system is still rebootable and will not wait
+# root password at boot time because of unexisting device or bad options or
+# whatever.
+- name: "include tasks to validate /etc/fstab"
+  include_tasks: validate-fstab.yml
+  listen:
+    - validate_fstab
+  when:
+    - filesystems__validate | bool

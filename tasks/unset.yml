@@ -6,9 +6,20 @@
 # Each task should be clearly named, with no inventory variable in the name.
 
 
+# This will compare running state (ansible_mounts) with user input variable
+# (edf_filesystem_manage_fslist) to know if something is to be renamed. This is the first
+# step and builds the variable _fs_rename_.
+# after
+- import_tasks: cross-facts.yml
+
+
+# The only way to keep consistency when changing the 'path' or the 'lv' value
+# is to change it on the host, or fail as soon as possible if not doable.
 - name: "include tasks to change paths of devices or mountpoints"
   include_tasks: rename.yml
-  when: filesystems__update_paths | bool
+  when:
+    - _fs_rename_.0 is defined
+    - filesystems__update_paths | bool
 
 
 # Some services may still write or read into files, or a user may stay
@@ -20,31 +31,32 @@
 - name: "kill remaining processes accessing filesystems"
   command: |
     fuser --kill \
-    -{{ 'KILL' if fs.force|default(filesystems__force|default(False))|bool else 'TERM' }} \
-    --ismountpoint {{ fs.path }}
-  loop: "{{ __internal__ }}"
+    -{{ 'KILL' if _fs_item.force|default(filesystems__default_force|default(False))|bool else 'TERM' }} \
+    --ismountpoint {{ _fs_item.path }}
+  loop: "{{ __fs__dictlist__ }}"
   loop_control:
-    loop_var: fs
-    # As the filesystems__list dictionnaries support a lot of keys, we
-    # keep only the most relevant against the name of the task.
-    label: "{{ fs.path }}"
-  register: kill
-  changed_when: kill.rc == 0
-  failed_when: kill.rc > 1
+    loop_var: _fs_item
+    # As the filesystems__fslist dictionnaries support a lot of keys, we keep
+    # only the most relevant against the name of the task.
+    label: "{{ _fs_item.path }}"
+  register: _fs_fuser_kill_
+  changed_when: _fs_fuser_kill_.rc == 0
+  failed_when: _fs_fuser_kill_.rc > 1
 
 
 # The list is reverse sorted against the mountpoints to ensure nested mounts
 # are undone in the right order.
 - name: "unmount Filesystems"
   mount:
-    path: "{{ fs.path }}"
+    path: "{{ _fs_item.path }}"
     state: absent
-  loop: "{{ __internal__ }}"
+  loop: "{{ __fs__dictlist__ }}"
   loop_control:
-    loop_var: fs
-    label: "{{ fs.path }}"
+    loop_var: _fs_item
+    label: "{{ _fs_item.path }}"
   notify:
     - reload_systemd
+    - validate_fstab
 
 
 # This avoids to get an already configured filesystem on a new LV starting at
@@ -58,41 +70,49 @@
     get_attributes: no
     get_checksum: no
     get_mime: no
-    path: "/dev/{{ fs.vg | default(filesystems__vg) }}/{{ fs.lv }}"
-  loop: "{{ __internal__ }}"
+    path: "/dev/{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+  loop: "{{ __fs__dictlist__ }}"
   loop_control:
-    loop_var: fs
-    label: "/dev/{{ fs.vg | default(filesystems__vg) }}/{{ fs.lv }}"
-  register: devices
+    loop_var: _fs_item
+    label: "/dev/{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+  register: _fs_wipefs_stat_
 
 
 - name: "wipe Filesystem signatures"
-  command: "wipefs --all {{ fs }}"
-  loop: "{{ wipefs_list }}"
+  command: "wipefs --all {{ _fs_item }}"
+  loop: "{{ __tempvar0__ }}"
   loop_control:
-    loop_var: fs
-  register: wipefs
-  changed_when: wipefs.rc == 0
-  failed_when: wipefs.rc > 1
+    loop_var: _fs_item
+  register: _fs_wipefs_
+  changed_when: _fs_wipefs_.rc == 0
+  failed_when: _fs_wipefs_.rc > 1
   vars:
-    wipefs_list: |
-      [ {% for dev in devices.results if dev.stat.exists and dev.stat.isblk %}
-        "{{ dev.stat.path }}"{{ '' if loop.last else ',' }}{% endfor %} ]
+    __tempvar0__: |
+      [
+        {% for x in _fs_wipefs_stat_.results if x.stat.exists and x.stat.isblk %}
+        "{{ x.stat.path }}"{{ '' if loop.last else ',' }}{% endfor %}
+      ]
+  notify:
+    - validate_fstab
 
 
 # At this step, we can force the removal of the LV without risk.
 - name: "remove Logical Volumes"
   lvol:
-    lv: "{{ lv.lv }}"
-    vg: "{{ lv.vg | default(filesystems__vg) }}"
+    lv: "{{ _fs_item.lv }}"
+    vg: "{{ _fs_item.vg | default(filesystems__default_vg) }}"
     state: absent
     force: yes
-  loop: "{{ __internal__ }}"
+  loop: "{{ __fs__dictlist__ }}"
   loop_control:
-    loop_var: lv
-    label: "{{ lv.vg | default(filesystems__vg) }}/{{ lv.lv }}"
+    loop_var: _fs_item
+    label: "{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+  notify:
+    - validate_fstab
 
 
 # The mountpoint has been removed. Maybe its parent is empty now, so remove it
 # too, and its parent, etc.
-- import_tasks: parentdirs-remove.yml
+- import_tasks: parents-unset.yml
+  vars:
+    __mountpoints__: "{{ __fs__dictlist__ | json_query('[*].path') }}"

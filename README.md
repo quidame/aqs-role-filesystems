@@ -20,15 +20,9 @@ The main action the role is called for. Choices are `setup` (the default) and
 filesystems__action: unset
 ```
 
-This variable defines the behaviour of the role when processing the filesystems
-list: `serial` (the default) or `sequential`.
-```yaml
-filesystems__behaviour: sequential
-```
-
 A list of dictionnaries describing filsystems to setup or unset.
 ```yaml
-filesystems__list:
+filesystems__fslist:
   - path:      MANDATORY - No default  - modules: mount, file
     lv:        MANDATORY - No default  - modules: lvol (filesystem, mount)
     vg:        Defaults to 'vg0'       - modules: lvol (filesystem, mount)
@@ -76,40 +70,76 @@ be set/overridden on a per-fs basis.
 
 The default VG the LV belongs to.
 ```yaml
-filesystems__vg: vg0
+filesystems__default_vg: vg0
 ```
 
 The default size of the LV to create, shrink or extend.
 ```yaml
-filesystems__size: 512M
+filesystems__default_size: 512M
 ```
 
 The default filesystem type.
 ```yaml
-filesystems__fstype: ext4
+filesystems__default_fstype: ext4
 ```
 
 Other default parameters that are not set by the role and so get the default
 values of the related modules.
 ```yaml
-filesystems__force:     (no)
-filesystems__resisefs:  (no)
-filesystems__lvol_opts: ()
-filesystems__pvs:       ()
-filesystems__shrink:    (yes) needs force=yes to be applied
-filesystems__mkfs_opts: ()
-filesystems__backup:    (no)
-filesystems__mountopts: ()
-filesystems__dump:      (0)
-filesystems__passno:    (0)
-filesystems__attr:      ()
-filesystems__mode:      () results may depend on umask
-filesystems__group:     (root)
-filesystems__owner:     (root)
-filesystems__selevel:   (s0)
-filesystems__serole:    ()
-filesystems__setype:    ()
-filesystems__seuser:    ()
+filesystems__default_force:     (no)
+filesystems__default_resisefs:  (no)
+filesystems__default_lvol_opts: ()
+filesystems__default_pvs:       ()
+filesystems__default_shrink:    (yes) needs force=yes to be applied
+filesystems__default_mkfs_opts: ()
+filesystems__default_backup:    (no)
+filesystems__default_mountopts: ()
+filesystems__default_dump:      (0)
+filesystems__default_passno:    (0)
+filesystems__default_attr:      ()
+filesystems__default_mode:      () results may depend on umask
+filesystems__default_group:     (root)
+filesystems__default_owner:     (root)
+filesystems__default_selevel:   (s0)
+filesystems__default_serole:    ()
+filesystems__default_setype:    ()
+filesystems__default_seuser:    ()
+```
+
+The 3 following variables are set in `vars/main.yml` to not be overridden from
+inventory.
+
+This variable defines the behaviour of the role when processing the filesystems
+list: `serial` (the default) or `sequential`.
+```yaml
+filesystems__behaviour: sequential
+```
+
+This variable defines if yes or no changes in Logical Volume names or paths of
+their mountpoints have to be updated. This renaming feature is enabled by
+default and can be disabled for debugging purposes.
+```yaml
+filesystems__update_paths: False
+```
+
+Almost all changes will trigger a handler to validate contents of `/etc/fstab`
+system file. This handler is a series of tasks to:
+- assert there is no duplicates in the file. Are considered as duplicated
+  devices paths such as `/dev/foo/bar` and `/dev/mapper/foo-bar`, and as
+  duplicated mountpoints paths such as `/srv/foobar` and `/srv/foobar/`.
+- assert there is no unpredictable name (as `/dev/sdb2` or `/dev/dm-6`) in use
+  in the file.
+- assert that fstypes recorded in fstab match the ones in `ansible_mounts` for
+  a same mountpoint, if mounted.
+- check that all recorded devices and mountpoints exist.
+- finish to validate fstab entries by performing acual mount calls, with option
+  `-o remount` for mounted filesystems (this will validate mount options) and
+  with no option at all for unmounted ones (this will validate mount options as
+  well as fstype.
+
+This handler can be skipped with:
+```yaml
+filesystems__validate: False
 ```
 
 ## Dependencies
@@ -135,15 +165,14 @@ ansible-galaxy install -r requirements.yml
 
 ## Example Playbook
 
-Including an example of how to use your role (for instance, with variables passed in as parameters) is always nice for users too:
-
 Setup two filesystems on JBoss servers, with both values specific to the fs
 (path, size) and variables valuable for all (mode, owner):
 ```yaml
 - hosts: servers
   roles:
     - role: filesystems
-      filesystems__list:
+      filesystems__action: unset
+      filesystems__fslist:
         - path: "{{ jboss_app_dir_path }}"
           size: "{{ jboss_app_vol_size }}"
           lv:   "{{ jboss_app_vol_name }}"
@@ -161,11 +190,20 @@ Unset servers:
   roles:
     - role: filesystems
       filesystems__action: unset
-      filesystems__list:
+      filesystems__fslist:
         - path: "{{ jboss_app_dir_path }}"
           lv:   "{{ jboss_app_vol_name }}"
         - path: "{{ jboss_var_dir_path }}"
           lv:   "{{ jboss_var_vol_name }}"
+```
+
+Validate `/etc/fstab`:
+```yaml
+- hosts: servers
+  tasks:
+    - include_role:
+        name: filesystems
+	tasks_from: validate-fstab.yml
 ```
 
 ## License

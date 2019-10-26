@@ -1,6 +1,6 @@
 ---
 # role: filesystems
-# file: tasks/parentdirs-remove.yml
+# file: tasks/parents-unset.yml
 #
 # Tasks to remove parent directories of mountpoints after unsetting them.
 
@@ -29,19 +29,20 @@
 
 - name: "stat directories that could be removed"
   stat:
-    path: "{{ path }}"
-  register: stat
-  loop: "{{ templist | sort | unique | reverse | list }}"
+    path: "{{ _fs_parents_item }}"
+  loop: "{{ __tempvar0__ | sort | unique | reverse | list }}"
   loop_control:
-    loop_var: path
+    loop_var: _fs_parents_item
+  register: _fs_parents_stat_
   vars:
     # Get the complete list of all directories for each mountpoint, including
     # the mp itself.  The nested loop is looping over the depth of the given
     # mountpoint.
-    templist: |
+    __tempvar0__: |
       [
-        {% for p in mount_points %}{% for i in range(0, p.split('/')|length-2) %}
-        "{{ p | regex_replace('(/[^/]+){%s}$' % i, '') }}"
+        {% for m in __mountpoints__ %}
+        {% for i in range(0, m.split('/') | length - 2) %}
+        "{{ m | regex_replace('(/[^/]+){%s}$' % i, '') }}"
         {{ '' if loop.last else ',' }}{% endfor %}
         {{ '' if loop.last else ',' }}{% endfor %}
       ]
@@ -55,30 +56,32 @@
 # error !!! A 'when' conditional statement could be useful here to explicitly
 # show them as skipped instead of unchanged, but this needs to know the result
 # in advance :)
+#
 - name: "remove ascending empty directories"
   shell: |
-    mountpoint {{ dir }} ||
-    rmdir --verbose {{ dir }}
-  register: rmdir
-  loop: "{{ templist }}"
+    mountpoint {{ _fs_parents_item }} ||
+    rmdir --verbose {{ _fs_parents_item }}
+  loop: "{{ __tempvar0__ }}"
   loop_control:
-    loop_var: dir
+    loop_var: _fs_parents_item
+  register: _fs_parents_rmdir_
   failed_when:
-    - rmdir.rc != 0
-    - rmdir.stderr is not search('not empty$')
+    - _fs_parents_rmdir_.rc != 0
+    - _fs_parents_rmdir_.stderr is not search('not empty$')
   changed_when:
-    - rmdir.rc == 0
-    - rmdir.stdout is not search('is a mountpoint$')
+    - _fs_parents_rmdir_.rc == 0
+    - _fs_parents_rmdir_.stdout is not search('is a mountpoint$')
   environment:
     LANG: C
   vars:
     # Dirs with more than one subdir are skipped, as well as first level dirs
     # (/opt, /srv, /var, ...)
-    templist: |
+    __tempvar0__: |
       [
-        {% for s in stat.results if
-          s.stat.exists and
-          s.stat.nlink in [2,3] and
-          s.path is not match( '/[^/]*$' ) %}
-        "{{ s.path }}"{{ '' if loop.last else ',' }}{% endfor %}
+        {% for s in _fs_parents_stat_.results if
+          s.stat.exists and s.stat.nlink in [2,3] and s._fs_parents_item is not match( '/[^/]*$' ) %}
+        "{{ s._fs_parents_item }}"{{ '' if loop.last else ',' }}
+        {% endfor %}
       ]
+  notify:
+    - validate_fstab

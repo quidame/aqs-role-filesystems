@@ -1,0 +1,72 @@
+---
+# role: filesystems
+# file: tasks/cross-facts.yml
+
+
+# We'll rely on ansible_mounts in the next task, so make it reliable (that's
+# mandatory in sequential mode, and highly recommended in serial mode).
+- name: "regather fact 'ansible_mounts'"
+  setup:
+    filter: ansible_mounts
+
+
+# The only purpose of this file is to deduplicate code, as the built object is
+# needed in both create.yml and remove.yml. That said, the task itself is to
+# cross-compare facts and user variables and build a complex object describing
+# changes to be done. See below the spec of __volatilevar2__. It is reverse
+# sorted to ensure nested mounts will be unmounted in this reverse order.
+#
+- name: "build data structure describing expected renaming, if any"
+  set_fact:
+    _fs_rename_: "{{ __tempvar2__ | sort(attribute='old.dir') | reverse | list }}"
+  vars:
+    # Keep a small subset of ansible_mounts. Other keys are not relevant for
+    # our needs, and so filtered.
+    __tempvar0__: |
+      [
+        {% for m in ansible_mounts %}{
+          "dev": "{{ m.device }}",
+          "dir": "{{ m.mount }}",
+          "fstype": "{{ m.fstype }}"
+          }{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    __tempvar1__: |
+      [
+        {% for m in __fs__dictlist__ %} {
+          "dev": "/dev/mapper/{{ m.vg | default(filesystems__default_vg) | regex_replace('-', '--') }}-{{ m.lv | regex_replace('-', '--') }}",
+          "dir": "{{ m.path | regex_replace('/+$', '') }}",
+          "fstype": "{{ m.fstype | default(filesystems__default_fstype) }}",
+          }{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    # Build the main dictlist with:
+    #
+    # fstype: the old and new mounts must be of the same fstype
+    # old:
+    #   dev: old device path (/dev/mapper/...)
+    #   dir: old mountpoint
+    # new:
+    #   dev: new device path (/dev/mapper/...)
+    #   dir: new mountpoint
+    # source: old device or mountpoint (the one to be renamed)
+    # target: new device or mountpoint (same type than source)
+    # type: "dev" or "dir", i.e. the type of the path to "rename"
+    #
+    __tempvar2__: |
+      [
+        {% for p in __tempvar0__ | product(__tempvar1__) if
+          p.0 != p.1 and p.0.fstype == p.1.fstype and ( p.0.dir == p.1.dir or p.0.dev == p.1.dev ) %}{
+          "fstype": "{{ p.0.fstype }}",
+          "new": { "dev": "{{ p.1.dev }}", "dir": "{{ p.1.dir }}" },
+          "old": { "dev": "{{ p.0.dev }}", "dir": "{{ p.0.dir }}" },
+          {% if p.0.dev == p.1.dev %}
+          "source": "{{ p.0.dir }}", "target": "{{ p.1.dir }}", "type": "dir"
+          {% else %}
+          "source": "{{ p.0.dev }}", "target": "{{ p.1.dev }}", "type": "dev"
+          {% endif %}
+        }{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]

@@ -28,44 +28,15 @@ filesystems__action: "setup"
 
 ################################################################################
 ## filesystems__behaviour
-#
-# This is also a behavioural variable that defines HOW the role will work.
-# If 'serial' (the default), filesystems will be processed in parallel, i.e.
-# all LV will be created, then all FS, then all mounts and so on. This mode is
-# the most efficient.
-# If 'sequential', filesystems will be processed sequentially, i.e. all tasks
-# will be performed to setup/unset a filesystem, then all tasks for the next
-# filesystem and so on.
-#
-filesystems__behaviour: "serial"
-
-
-################################################################################
 ## filesystems__update_paths
+## filesystems__validate
 #
-# When set to True, this variable allows one to update paths of Logical Volumes
-# or their mountpoints if for an active mount, one (and only one) of the LV name
-# or directory path has changed in filesystems__list.
-#
-filesystems__update_paths: True
+# Implemented in vars/main.yml to not be too easily overridden (i.e. can't be
+# inventory variables).
 
 
 ################################################################################
-## filesystems__parents
-#
-# Dictionnary describing properties to apply to mountpoint's parent directories
-# if they have to be created. Example:
-#
-#filesystems__parents:
-#  owner: www-data
-#  group: www-data
-#  mode: 0750
-#
-filesystems__parents: {}
-
-
-################################################################################
-## filesystems__list
+## filesystems__fslist
 #
 # Define the list of filesystems to setup through a list of dictionnaries, with
 # variables matching parameters of ansible modules: lvol, filesystem, mount and
@@ -73,7 +44,7 @@ filesystems__parents: {}
 # with a non-sharable value.
 #
 # Example:
-#filesystems__list:
+#filesystems__fslist:
 #  - path: /srv/mirror
 #    vg: data02
 #    lv: srv.mirror
@@ -85,33 +56,48 @@ filesystems__parents: {}
 #    vg: data02
 #    lv: srv.tftp
 #
-filesystems__list: []
+filesystems__fslist: []
 
 
 ################################################################################
-## filesystems__*
+## filesystems__parents
+#
+# Dictionnary describing properties to apply to mountpoint's parent directories
+# if they have to be created. Dictionary keys match the parameters of the file
+# module. Example:
+#
+#filesystems__parents:
+#  owner: www-data
+#  group: www-data
+#  mode: 0750
+#
+filesystems__parents: {}
+
+
+################################################################################
+## filesystems__default_*
 #
 # These are the default values, that are applicable to any FS to setup, if not
-# overridden by the same variables on a per-fs basis in filesystems__list.
+# overridden by the same variables on a per-fs basis in filesystems__fslist.
 #
-filesystems__vg: vg0
-filesystems__size: 512M
-filesystems__fstype: ext4
-#filesystems__force:     OMIT
-#filesystems__resisefs:  OMIT
-#filesystems__lvol_opts: OMIT
-#filesystems__pvs:       OMIT
-#filesystems__shrink:    OMIT
-#filesystems__mkfs_opts: OMIT
-#filesystems__backup:    OMIT
-#filesystems__dump:      OMIT
-#filesystems__mountopts: OMIT
-#filesystems__passno:    OMIT
-#filesystems__attr:      OMIT
-#filesystems__group:     OMIT
-#filesystems__mode:      OMIT
-#filesystems__owner:     OMIT
-#filesystems__selevel:   OMIT
-#filesystems__serole:    OMIT
-#filesystems__setype:    OMIT
-#filesystems__seuser:    OMIT
+filesystems__default_vg: vg0
+filesystems__default_size: 512M
+filesystems__default_fstype: ext4
+#filesystems__default_force:     OMIT
+#filesystems__default_resisefs:  OMIT
+#filesystems__default_lvol_opts: OMIT
+#filesystems__default_pvs:       OMIT
+#filesystems__default_shrink:    OMIT
+#filesystems__default_mkfs_opts: OMIT
+#filesystems__default_backup:    OMIT
+#filesystems__default_dump:      OMIT
+#filesystems__default_mountopts: OMIT
+#filesystems__default_passno:    OMIT
+#filesystems__default_attr:      OMIT
+#filesystems__default_group:     OMIT
+#filesystems__default_mode:      OMIT
+#filesystems__default_owner:     OMIT
+#filesystems__default_selevel:   OMIT
+#filesystems__default_serole:    OMIT
+#filesystems__default_setype:    OMIT
+#filesystems__default_seuser:    OMIT

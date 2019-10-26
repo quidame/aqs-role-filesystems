@@ -1,6 +1,6 @@
 ---
 # role: filesystems
-# file: tasks/parentdirs-create.yml
+# file: tasks/parents-setup.yml
 #
 # Tasks to create parent directories of mountpoints before setting them.
 
@@ -39,17 +39,20 @@
 
 - name: "stat directories that could be created"
   stat:
-    path: "{{ path }}"
-  register: stat
-  loop: "{{ templist | sort | unique }}"
+    path: "{{ _fs_parents_item }}"
+  loop: "{{ __tempvar1__ | sort | unique }}"
   loop_control:
-    loop_var: path
+    loop_var: _fs_parents_item
+  register: _fs_parents_stat_
   vars:
     # List nested mountpoints, i.e. elements of the list that include another,
     # such as in [ "/srv", "/srv/tftp" ], /srv/tftp is a nested mount.
-    templist0: |
-      [ {% for i in mount_points | product(mount_points) | list if i.0 is match(i.1 + '/') %}
-        "{{ i.0 }}"{{ '' if loop.last else ',' }}{% endfor %} ]
+    __tempvar0__: |
+      [
+        {% for m in __mountpoints__ | product(__mountpoints__) | list if m.0 is match(m.1 + '/') %}
+        "{{ m.0 }}"{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
     # Decompose the full path to its components. Nested mounts are excluded
     # so the next step will not create directories that will be hidden by
     # the parent mount. For example, for [ "/srv", "/srv/www/local" ],
@@ -57,11 +60,11 @@
     # Note that this may need additional tasks apart of this role to set
     # properties of /srv/www, since it will be created by the mount module
     # when creating /srv/www/local mountpoint with unsettable umask.
-    templist: |
+    __tempvar1__: |
       [
-        {% for p in mount_points | difference(templist0) %}
-        {% for i in range(1, p.split('/')|length-1) %}
-        "{{ p | regex_replace('(/[^/]+){%s}$' % i, '') }}"
+        {% for m in __mountpoints__ | difference(__tempvar0__) %}
+        {% for i in range(1, m.split('/') | length - 1) %}
+        "{{ m | regex_replace('(/[^/]+){%s}$' % i, '') }}"
         {{ '' if loop.last else ',' }}{% endfor %}
         {{ '' if loop.last else ',' }}{% endfor %}
       ]
@@ -69,7 +72,7 @@
 
 - name: "create missing directories with non-default properties"
   file:
-    path: "{{ path }}"
+    path: "{{ _fs_parents_item }}"
     attr:    "{{ filesystems__parents.attr    | default(omit) }}"
     mode:    "{{ filesystems__parents.mode    | default(omit) }}"
     owner:   "{{ filesystems__parents.owner   | default(omit) }}"
@@ -79,12 +82,13 @@
     setype:  "{{ filesystems__parents.setype  | default(omit) }}"
     seuser:  "{{ filesystems__parents.seuser  | default(omit) }}"
     state: directory
-  loop: "{{ templist }}"
+  loop: "{{ __tempvar0__ }}"
   loop_control:
-    loop_var: path
+    loop_var: _fs_parents_item
   vars:
-    templist: |
+    __tempvar0__: |
       [
-        {% for s in stat.results if not s.stat.exists %}
-        "{{ s.path }}"{{ '' if loop.last else ',' }}{% endfor %}
+        {% for s in _fs_parents_stat_.results if not s.stat.exists %}
+        "{{ s._fs_parents_item }}"{{ '' if loop.last else ',' }}
+        {% endfor %}
       ]
