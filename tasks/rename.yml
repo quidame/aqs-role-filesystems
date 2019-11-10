@@ -51,7 +51,7 @@
 - name: "display the data structure we will play with for renaming"
   debug:
     var: _fs_rename_
-    #verbosity: 2
+    verbosity: 2
 
 
 # Now we need to know if target devices already exist, or if target directories

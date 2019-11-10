@@ -51,8 +51,8 @@
 - name: "create Logical Volumes"
   lvol:
     lv:       "{{ _fs_item.lv }}"
-    vg:       "{{ _fs_item.vg        | default(filesystems__default_vg) }}"
-    size:     "{{ _fs_item.size      | default(filesystems__default_size) }}"
+    vg:       "{{ _fs_item.vg }}"
+    size:     "{{ _fs_item.size }}"
     force:    "{{ _fs_item.force     | default(filesystems__default_force     | default(omit)) }}"
     opts:     "{{ _fs_item.lvol_opts | default(filesystems__default_lvol_opts | default(omit)) }}"
     pvs:      "{{ _fs_item.pvs       | default(filesystems__default_pvs       | default(omit)) }}"
@@ -64,7 +64,11 @@
     loop_var: _fs_item
     # As the filesystems__fslist dictionnaries support a lot of keys, we keep
     # only the most relevant against the name of the task.
-    label: "{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+    label: {
+      "vg": "{{ _fs_item.vg }}",
+      "lv": "{{ _fs_item.lv }}",
+      "size": "{{ _fs_item.size }}"
+      }
   notify:
     - validate_fstab
 
@@ -75,8 +79,8 @@
 #
 - name: "create filesystems on Logical Volumes"
   filesystem:
-    dev:      "/dev/{{ _fs_item.vg   | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
-    fstype:   "{{ _fs_item.fstype    | default(filesystems__default_fstype) }}"
+    dev:      "{{ _fs_item.device }}"
+    fstype:   "{{ _fs_item.fstype }}"
     force:    "{{ _fs_item.force     | default(filesystems__default_force     | default(omit)) }}"
     opts:     "{{ _fs_item.mkfs_opts | default(filesystems__default_mkfs_opts | default(omit)) }}"
     resizefs: "{{ _fs_item.resizefs  | default(filesystems__default_resizefs  | default(omit)) }}"
@@ -84,8 +88,8 @@
   loop_control:
     loop_var: _fs_item
     label: {
-      "fstype": "{{ _fs_item.fstype | default(filesystems__default_fstype) }}",
-      "dev": "/dev/{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+      "fstype": "{{ _fs_item.fstype }}",
+      "dev": "{{ _fs_item.device }}"
       }
   notify:
     - validate_fstab
@@ -102,9 +106,9 @@
 #
 - name: "mount filesystems and register them in fstab"
   mount:
-    path: "{{ _fs_item.path | regex_replace('/+$', '') }}"
-    src: "/dev/mapper/{{ _fs_item.vg | default(filesystems__default_vg) | regex_replace('-', '--') }}-{{ _fs_item.lv | regex_replace('-', '--') }}"
-    fstype: "{{ _fs_item.fstype    | default(filesystems__default_fstype) }}"
+    path:   "{{ _fs_item.path }}"
+    src:    "{{ _fs_item.device }}"
+    fstype: "{{ _fs_item.fstype }}"
     opts:   "{{ _fs_item.mountopts | default(filesystems__default_mountopts | default(omit)) }}"
     dump:   "{{ _fs_item.dump      | default(filesystems__default_dump      | default(omit)) }}"
     passno: "{{ _fs_item.passno    | default(filesystems__default_passno    | default(omit)) }}"
@@ -114,8 +118,8 @@
   loop_control:
     loop_var: _fs_item
     label: {
-      "src": "/dev/mapper/{{ _fs_item.vg | default(filesystems__default_vg) | regex_replace('-', '--') }}-{{ _fs_item.lv | regex_replace('-', '--') }}",
-      "path": "{{ _fs_item.path | regex_replace('/+$', '') }}"
+      "src": "{{ _fs_item.device }}",
+      "path": "{{ _fs_item.path }}"
       }
   notify:
     - reload_systemd
@@ -125,7 +129,7 @@
 # Again, we just reuse the same mandatory parameter as above.
 - name: "update access permissions to the roots of filesystems"
   file:
-    path:    "{{ _fs_item.path | regex_replace('/+$', '') }}"
+    path:    "{{ _fs_item.path }}"
     attr:    "{{ _fs_item.attr    | default(filesystems__default_attr    | default(omit)) }}"
     mode:    "{{ _fs_item.mode    | default(filesystems__default_mode    | default(omit)) }}"
     owner:   "{{ _fs_item.owner   | default(filesystems__default_owner   | default(omit)) }}"
@@ -138,3 +142,15 @@
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
     loop_var: _fs_item
+    label: |
+      {
+        "path": "{{ _fs_item.path }}"
+        {%- if _fs_item.attr is defined %},
+        "attr": "{{ _fs_item.attr }}"{% endif %}
+        {%- if _fs_item.mode is defined %},
+        "mode": "{{ _fs_item.mode }}"{% endif %}
+        {%- if _fs_item.owner is defined %},
+        "owner": "{{ _fs_item.owner }}"{% endif %}
+        {%- if _fs_item.group is defined %},
+        "group": "{{ _fs_item.group }}"{% endif %}
+      }

@@ -36,9 +36,9 @@
     __tempvar1__: |
       [
         {% for m in __fs__dictlist__ %} {
-          "dev": "/dev/mapper/{{ m.vg | default(filesystems__default_vg) | regex_replace('-', '--') }}-{{ m.lv | regex_replace('-', '--') }}",
-          "dir": "{{ m.path | regex_replace('/+$', '') }}",
-          "fstype": "{{ m.fstype | default(filesystems__default_fstype) }}",
+          "dev": "{{ m.device }}",
+          "dir": "{{ m.path }}",
+          "fstype": "{{ m.fstype }}",
           }{{ '' if loop.last else ',' }}
         {% endfor %}
       ]
