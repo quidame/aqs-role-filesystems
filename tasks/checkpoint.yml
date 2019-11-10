@@ -13,16 +13,16 @@
   assert:
     that: |
       [
-        {# Check OS compatibility and ansible version (should match meta/) }#}
+        {# Check OS compatibility and ansible version (should match meta/) -#}
         "( ansible_distribution in ['Debian'] and ansible_distribution_version is version('9.0', '>=') ) or \
          ( ansible_distribution in ['Redhat'] and ansible_distribution_version is version('7.0', '>=') )",
         "ansible_version.full is version('2.7', '>=')",
 
-        {# Check value (keyword) of role variables controlling its behaviour }#}
-        "filesystems__action in ['setup', 'unset']",
+        {# Check value (keyword) of role variables controlling its behaviour -#}
+        "filesystems__action in ['setup', 'unset', 'extend']",
         "filesystems__behaviour in ['serial', 'sequential']",
 
-        {# check type of mandatory variables filled by user }#}
+        {# check type of mandatory variables filled by user -#}
         "filesystems__fslist | type_debug == 'list'",
         "filesystems__parents | type_debug == 'dict'",
 
@@ -30,13 +30,14 @@
            from commmandline. Also note that by checking they are undefined, we
            assume that they're left undefined after the role play, otherwise the
            role could not be played twice or more in the same playbook. So, the
-           following variables must not be set in set_fact nor in register. }#}
+           following variables must not be set in set_fact nor in register. -#}
 
         {# 1. Variable set either in task vars or in loop_var, depending on the
-              filesystems__behaviour value. }#}
+              filesystems__behaviour value. -#}
         "__fs__dictlist__ is undefined",
 
-        {# 2. Variables set in task vars }#}
+        {# 2. Variables set in task vars -#}
+        "filesystems__fslist_preprocessed is undefined",
         "__tempvar0__ is undefined",
         "__tempvar1__ is undefined",
         "__tempvar2__ is undefined",
@@ -50,7 +51,7 @@
         "fstab_filesystems is undefined",
         "fstab_mountpoints is undefined",
 
-        {# 3. Variables set in loop_var }#}
+        {# 3. Variables set in loop_var -#}
         "_fs_item is undefined",
         "_fs_parents_item is undefined",
         "_fs_rename_item is undefined",
@@ -59,20 +60,44 @@
         {# Check mandatory variables and their format/type for all dicts of the
            list. By looping over the index (i) we can evaluate and display the
            symbolic path of the variable instead of its content (the dictionary
-           itself), keeping assertions readable in case of error. }#}
+           itself), keeping assertions readable in case of error. A failed
+           assertion will be displayed as (for example)
+           "assertion": "filesystems__fslist.1.lv is defined",
+           "evaluated_to": false
+           -#}
         {% set _fs_ = 'filesystems__fslist' %}
         {% for i in range(0, filesystems__fslist | length - 1) %}
         "{{ _fs_ }}.{{ i }} | type_debug == 'dict'",
-        "{{ _fs_ }}.{{ i }}.path is regex('^(/[^/]+){2,}/?$')", {# No first level directory, supports trailing / }#}
-        "{{ _fs_ }}.{{ i }}.lv is regex('^[^/]+$')",            {# The name, not the path }#}
-        "{{ _fs_ }}.{{ i }}.vg is defined or filesystems__default_vg is regex('^[^/]+$')",
-        "{{ _fs_ }}.{{ i }}.vg is undefined or {{ _fs_ }}.{{ i }}.vg is regex('^[^/]+$')",
-        "{{ _fs_ }}.{{ i }}.size is defined or filesystems__default_size is regex('^[1-9]+([MmGgTt]|%VG)$')",
-        "{{ _fs_ }}.{{ i }}.size is undefined or {{ _fs_ }}.{{ i }}.size is regex('^[1-9]+([MmGgTt]|%VG)$')",
-        "{{ _fs_ }}.{{ i }}.fstype is defined or filesystems__default_fstype in filesystems__fstypes|default([]) + ['ext4', 'xfs']",
-        "{{ _fs_ }}.{{ i }}.fstype is undefined or {{ _fs_ }}.{{ i }}.fstype in filesystems__fstypes|default([]) + ['ext4', 'xfs']",
+
+        "{{ _fs_ }}.{{ i }}.path is defined",
+        {# No first level directory, supports trailing / or consecutive /, since
+           this will be normalized before doing anything - except overwrite the
+           file /etc/fstab for the same reason -#}
+        "{{ _fs_ }}.{{ i }}.path is regex('^(/+[^/]+){2,}$')",
+
+        "{{ _fs_ }}.{{ i }}.lv is defined",
+        {# This is the LV name, not the path of the device (nor a symlink to
+           it). We accept everything is supported by LVM. Dashes (-), that need
+           to be translated to double-dashes (--) to match the device-mapper
+           naming format, are supported too, as in (with lv='lv-foo-bar')
+           /dev/vg-00/lv-foo-bar  <==>  /dev/mapper/vg--00-lv--foo--bar -#}
+        "{{ _fs_ }}.{{ i }}.lv is regex('^[^/]+$')",
+
+        "{{ _fs_ }}.{{ i }}.vg is undefined or {{ _fs_ }}.{{ i }}.vg in ansible_lvm.vgs", {# The VG exists -#}
+        "{{ _fs_ }}.{{ i }}.vg is defined or filesystems__default_vg in ansible_lvm.vgs",
+
+        "{{ _fs_ }}.{{ i }}.size is undefined or {{ _fs_ }}.{{ i }}.size is regex('^[+-]?[1-9][0-9]*([MmGgTt]|%VG)$')",
+        "{{ _fs_ }}.{{ i }}.size is defined or filesystems__default_size is regex('^[+-]?[1-9][0-9]*([MmGgTt]|%VG)$')",
+
+        "{{ _fs_ }}.{{ i }}.fstype is undefined or {{ _fs_ }}.{{ i }}.fstype in ['ext4', 'xfs']",
+        "{{ _fs_ }}.{{ i }}.fstype is defined or filesystems__default_fstype in ['ext4', 'xfs']",
+
+        {# Exhaustivity is not a goal on its own. This is just a kind of example
+           of checking optional parameters. Think if you really want to check
+           permission values in octal as well as litteral formats for every case
+           encountered... -#}
         "{{ _fs_ }}.{{ i }}.passno is undefined or {{ _fs_ }}.{{ i }}.passno in [0, 2, '0', '2']",
-        "{{ _fs_ }}.{{ i }}.passno is defined or filesystems__default_passno is undefined or filesystems__default_passno in [0, 2, '0', '2']"
+        "{{ _fs_ }}.{{ i }}.passno is defined or filesystems__default_passno | d(0) in [0, 2, '0', '2']"
         {{ '' if loop.last else ',' }}{% endfor %}
       ]
 
