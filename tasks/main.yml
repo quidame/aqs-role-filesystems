@@ -4,6 +4,15 @@
 
 
 ################################################################################
+# BACKWARD COMPATIBILITY
+#
+# Tasks to ensure bacward compatibility across versions, when changes occur in
+# variable names or type/format.
+#
+#- import_tasks: backward-compatibility.yml
+
+
+################################################################################
 # CHECK POINT
 #
 # The check points are developped in a dedicated file. Their purpose is to fail

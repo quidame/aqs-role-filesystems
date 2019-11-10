@@ -1,0 +1,6 @@
+---
+# role: filesystems
+# file: tasks/backward-compatibility.yml
+#
+# Tasks to ensure backward compatibility between versions, especially about
+# changes in variables names and formats.
