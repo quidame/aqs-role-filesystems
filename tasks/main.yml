@@ -33,50 +33,72 @@
 # SERIAL OR SEQUENTIAL
 #
 # The sequential mode is more suitable for very complicated things (as long as
-# there is no renaming between), and serial mode is faster.
+# there is no renaming between), and serial mode is faster. We play them in a
+# block so we can share variables.
+#
+- name: "{{ filesystems__action }} filesystems"
+  block:
+
+    ############################################################################
+    # sequential
+    #
+    #   Only one filesystem is set/unset at a time.
+    #   - 1st filesystem: all tasks
+    #   - 2nd filesystem: all tasks
+    #   For example: fully setup a filesystem, then fully setup the next one...
+    #
+    - name: "{{ filesystems__action }} filesystems in sequential mode"
+      when: "filesystems__behaviour == 'sequential'"
+      include_tasks: "{{ filesystems__action }}.yml"
+      loop: |
+        [
+          {% for d in __fslist_order__ %}
+          [ {{ d }} ]{{ '' if loop.last else ',' }}
+          {% endfor %}
+        ]
+      loop_control:
+        loop_var: __fs__dictlist__
+        label: { "path": "{{ __fs__dictlist__.0.path }}" }
 
 
-################################################################################
-# sequential
-#
-#   Only one filesystem is set/unset at a time.
-#   - 1st filesystem: all tasks
-#   - 2nd filesystem: all tasks
-#   For example: fully setup a filesystem, then fully setup the next one...
-#
-- name: "{{ filesystems__action }} filesystems in sequential mode"
-  when: "filesystems__behaviour == 'sequential'"
-  include_tasks: "{{ filesystems__action }}.yml"
-  loop: |
-    [
-      {% for d in __fslist_order__ %}
-      [ {{ d }} ]{{ '' if loop.last else ',' }}
-      {% endfor %}
-    ]
-  loop_control:
-    loop_var: __fs__dictlist__
-    label: { "path": "{{ __fs__dictlist__.0.path }}" }
+    ############################################################################
+    # serial
+    #
+    #   Each task is applied to all listed filesystems at once.
+    #   - 1st task: all filesystems
+    #   - 2nd task: all filesystems
+    #   For example: create all LV, then create all FS, then mount all FS
+    #
+    - name: "{{ filesystems__action }} filesystems in serial mode"
+      when: "filesystems__behaviour == 'serial'"
+      include_tasks: "{{ filesystems__action }}.yml"
+      vars:
+        __fs__dictlist__: "{{ __fslist_order__ }}"
+
+
+  # Block vars are set for all tasks of the block, and are available for the
+  # more specific tasks vars.
   vars:
-    # The list is sorted against the mountpoints to ensure nested mounts are
-    # done in the right order and unmounted in reverse order.
-    __fslist_setup__: "{{ filesystems__fslist | sort(attribute='path') }}"
-    __fslist_unset__: "{{ filesystems__fslist | sort(attribute='path') | reverse | list }}"
+    # Normalize user input, i.e. fill missing but mandatory fields with default
+    # values provisionned in filesystems__default_* variables. Also override
+    # the 'path' by removing trailing slash and double slash. And append a key
+    # derived from 2 others so we'll not have to do it later.
+    filesystems__fslist_preprocessed: |
+      [
+        {% for d in filesystems__fslist %}
+        {% set D = {
+          "vg": "%s" % (d.vg | d(filesystems__default_vg)),
+          "size": "%s" % (d.size | d(filesystems__default_size)),
+          "fstype": "%s" % (d.fstype | d(filesystems__default_fstype)),
+          "path": "%s" % (d.path | regex_replace('/+$', '') | regex_replace('/+', '/')),
+          "device": "/dev/mapper/%s-%s" % (d.vg | d(filesystems__default_vg) | replace('-','--'),
+            d.lv | replace('-','--'))
+          } %}
+        {{ d | combine(D) }}{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+    # The list is sorted against the mountpoints to ensure nested mounts
+    # are done in the right order and unmounted in reverse order.
+    __fslist_setup__: "{{ filesystems__fslist_preprocessed | sort(attribute='path') }}"
+    __fslist_unset__: "{{ filesystems__fslist_preprocessed | sort(attribute='path') | reverse | list }}"
     __fslist_order__: "{{ __fslist_setup__ if filesystems__action == 'setup' else __fslist_unset__ }}"
-
-
-################################################################################
-# serial
-#
-#   Each task is applied to all listed filesystems at once.
-#   - 1st task: all filesystems
-#   - 2nd task: all filesystems
-#   For example: create all LV, then create all FS, then mount all FS
-#
-- name: "{{ filesystems__action }} filesystems in serial mode"
-  when: "filesystems__behaviour == 'serial'"
-  include_tasks: "{{ filesystems__action }}.yml"
-  vars:
-    __fslist_setup__: "{{ filesystems__fslist | sort(attribute='path') }}"
-    __fslist_unset__: "{{ filesystems__fslist | sort(attribute='path') | reverse | list }}"
-    __fslist_order__: "{{ __fslist_setup__ if filesystems__action == 'setup' else __fslist_unset__ }}"
-    __fs__dictlist__: "{{ __fslist_order__ }}"
