@@ -11,12 +11,17 @@
 # the same device, and finally the same mountpoint... Don't worry, this will
 # leave rootfs record (/) untouched.
 #
-- name: "cleanup trailing / in /etc/fstab to avoid duplicates"
+- name: "cleanup consecutive and trailing / in /etc/fstab to avoid duplicates"
   replace:
     path: /etc/fstab
     # Use single quotes to not have to escape the baslashes themselves.
-    regexp: '^(.*[^\s/])/+(\s.*)$'
-    replace: '\1\2'
+    regexp: '{{ fstab_item.regexp }}'
+    replace: '{{ fstab_item.replace }}'
+  loop:
+    - { regexp: '/+', replace: '/' }
+    - { regexp: '([^\s])/(\s)', replace: '\1\2' }
+  loop_control:
+    loop_var: fstab_item
   # By the way, the main reason we notify this handler is not to verify the
   # result of this task, but because we have fixed a non-standard syntax,
   # we make assumption that other bad things may be found in the file.
