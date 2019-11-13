@@ -23,32 +23,8 @@
     - filesystems__update_paths | bool
 
 
-# Some services may still write or read into files, or a user may stay
-# somewhere into the tree, making the mountpoint busy and leading the
-# umount command to fail. Killing all processes accessing the filesystem
-# will prevent this. This doesn't support cases such as:
-# - a directory on the mounted filesystem is itself an active mount
-# - a file on the mounted filesystem is associated to a loop device
-#
-- name: "kill remaining processes accessing filesystems"
-  command: |
-    fuser --kill \
-    -{{ 'KILL' if _fs_item.force|default(filesystems__default_force|default(False))|bool else 'TERM' }} \
-    --ismountpoint {{ _fs_item.path }}
-  loop: "{{ __fs__dictlist__ }}"
-  loop_control:
-    loop_var: _fs_item
-    # As the filesystems__fslist dictionnaries support a lot of keys, we keep
-    # only the most relevant against the name of the task.
-    label: "{{ _fs_item.path }}"
-  register: _fs_fuser_kill_
-  changed_when: _fs_fuser_kill_.rc == 0
-  failed_when: _fs_fuser_kill_.rc > 1
+- import_tasks: umount.yml
 
-
-# The list is reverse sorted against the mountpoints to ensure nested mounts
-# are undone in the right order.
-#
 - name: "unmount filesystems"
   mount:
     path: "{{ _fs_item.path }}"
