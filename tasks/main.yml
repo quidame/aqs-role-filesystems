@@ -92,9 +92,10 @@
     # values provisionned in filesystems__default_* variables. Also override
     # the 'path' by removing trailing slash and double slash. And append a key
     # derived from 2 others so we'll not have to do it later.
-    filesystems__fslist_preprocessed: |
+    filesystems__fslist_preprocess_0: |
       [
         {% for d in filesystems__fslist %}
+        {% if filesystems__action in ['setup'] %}
         {% set D = {
           "vg": "%s" % (d.vg | d(filesystems__default_vg)),
           "size": "%s" % (d.size | d(filesystems__default_size)),
@@ -103,11 +104,80 @@
           "device": "/dev/mapper/%s-%s" % (d.vg | d(filesystems__default_vg) | replace('-','--'),
             d.lv | replace('-','--'))
           } %}
+        {% elif filesystems__action in ['unset', 'umount'] %}
+        {% set D = {
+          "vg": "%s" % (d.vg | d(filesystems__default_vg)),
+          "fstype": "%s" % (d.fstype | d(filesystems__default_fstype)),
+          "path": "%s" % (d.path | regex_replace('/+$', '') | regex_replace('/+', '/')),
+          "device": "/dev/mapper/%s-%s" % (d.vg | d(filesystems__default_vg) | replace('-','--'),
+            d.lv | replace('-','--'))
+          } %}
+        {% endif %}
         {{ d | combine(D) }}{{ '' if loop.last else ',' }}
         {% endfor %}
       ]
+
+    # Something else to do ? Maybe it's not a good idea to mix user input and
+    # gathered facts (ansible_mounts, ansible_devices, ansible_lvm) so early.
+    # But it makes sense to avoid common mistakes about LV and FS resizing...
+    filesystems__fslist_preprocess_1: |
+      [
+        {% if filesystems__action in ['setup'] %}
+        {% for d in filesystems__fslist_preprocess_0 %}
+          {#
+            # This will be to check if d.device has d.fstype filesystem type and
+            # is mounted on d.path
+          -#}
+          {% set query_device = '[?mount == `%s`].device' % d.path %}
+          {% set query_fstype = '[?mount == `%s`].fstype' % d.path %}
+          {% set D = {} %}
+
+          {#
+            # ext4 can be extended when mounted or not; reduced when unmounted.
+            # obviously, if the size string begins with a plus sign (+), there
+            # is no need to worry about shrink parameter.
+          -#}
+          {% if d.fstype in ['ext4'] %}
+            {% if d.size is match('\+') %}
+            {% set D = { "resizefs": true } %}
+            {% endif %}
+            {% if d.device not in ansible_mounts | json_query('[*].device')
+              and d.shrink is undefined
+              and filesystems__default_shrink is undefined %}
+              {#
+                # if the device is not mounted, and 'shrink' is not defined at
+                # all (neither for this fs nor as default), we simply set it to
+                # the same value than 'force', that defaults itself to False.
+              -#}
+              {% set D = {
+                "resizefs":  d.force | d(filesystems__default_force|d(False)) | bool,
+                "shrink": d.force | d(filesystems__default_force|d(False)) | bool
+                } %}
+            {% endif %}
+
+          {#
+            # xfs can only be extended, and only if mounted; not shrinkable fs.
+          -#}
+          {% elif d.fstype in ['xfs'] %}
+            {% set D = { "shrink": false } %}
+            {% if [d.device] == ansible_mounts | json_query(query_device)
+              and [d.fstype] == ansible_mounts | json_query(query_fstype)
+              and d.resizefs is undefined
+              and filesystems__default_resizefs is undefined %}
+              {% set D = { "shrink": false, "resizefs": true } %}
+            {% endif %}
+          {% endif %}
+        {{ d | combine(D) }}{{ '' if loop.last else ',' }}
+        {% endfor %}
+        {% endif %}
+      ]
+
+    filesystems__fslist_preprocessed: "{{
+      filesystems__fslist_preprocess_0 if filesystems__action in ['unset', 'umount'] else
+      filesystems__fslist_preprocess_1 if filesystems__action in ['setup'] else [] }}"
+
     # The list is sorted against the mountpoints to ensure nested mounts
     # are done in the right order and unmounted in reverse order.
     __fslist_setup__: "{{ filesystems__fslist_preprocessed | sort(attribute='path') }}"
     __fslist_unset__: "{{ filesystems__fslist_preprocessed | sort(attribute='path') | reverse | list }}"
-    __fslist_order__: "{{ __fslist_setup__ if filesystems__action == 'setup' else __fslist_unset__ }}"
+    __fslist_order__: "{{ __fslist_setup__ if filesystems__action in ['setup'] else __fslist_unset__ }}"
