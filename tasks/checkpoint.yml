@@ -19,7 +19,7 @@
         "ansible_version.full is version('2.7', '>=')",
 
         {# Check value (keyword) of role variables controlling its behaviour -#}
-        "filesystems__action in ['setup', 'unset']",
+        "filesystems__action in ['setup', 'unset', 'umount']",
         "filesystems__behaviour in ['serial', 'sequential']",
 
         {# check type of mandatory variables filled by user -#}
