@@ -19,7 +19,7 @@
         "ansible_version.full is version('2.7', '>=')",
 
         {# Check value (keyword) of role variables controlling its behaviour -#}
-        "filesystems__action in ['setup', 'unset', 'extend']",
+        "filesystems__action in ['setup', 'unset']",
         "filesystems__behaviour in ['serial', 'sequential']",
 
         {# check type of mandatory variables filled by user -#}
@@ -37,6 +37,8 @@
         "__fs__dictlist__ is undefined",
 
         {# 2. Variables set in task vars -#}
+        "filesystems__fslist_preprocess_0 is undefined",
+        "filesystems__fslist_preprocess_1 is undefined",
         "filesystems__fslist_preprocessed is undefined",
         "__tempvar0__ is undefined",
         "__tempvar1__ is undefined",
@@ -86,18 +88,28 @@
         "{{ _fs_ }}.{{ i }}.vg is undefined or {{ _fs_ }}.{{ i }}.vg in ansible_lvm.vgs", {# The VG exists -#}
         "{{ _fs_ }}.{{ i }}.vg is defined or filesystems__default_vg in ansible_lvm.vgs",
 
-        "{{ _fs_ }}.{{ i }}.size is undefined or {{ _fs_ }}.{{ i }}.size is regex('^[+-]?[1-9][0-9]*([MmGgTt]|%VG)$')",
-        "{{ _fs_ }}.{{ i }}.size is defined or filesystems__default_size is regex('^[+-]?[1-9][0-9]*([MmGgTt]|%VG)$')",
+        {% if filesystems__action in ['setup'] %}
+        "{{ _fs_ }}.{{ i }}.size is undefined or {{ _fs_ }}.{{ i }}.size is regex('^[+-]?[1-9][0-9]*([BkKmMgGtT]|%(VG|FREE|PVS))$')",
+        "{{ _fs_ }}.{{ i }}.size is defined or filesystems__default_size is regex('^[+-]?[1-9][0-9]*([BkKmMgGtT]|%(VG|FREE|PVS))$')",
 
         "{{ _fs_ }}.{{ i }}.fstype is undefined or {{ _fs_ }}.{{ i }}.fstype in ['ext4', 'xfs']",
         "{{ _fs_ }}.{{ i }}.fstype is defined or filesystems__default_fstype in ['ext4', 'xfs']",
+
+        {# XFS filsystem type is not shrinkable -#}
+        "{{ _fs_ }}.{{ i }}.fstype | d(filesystems__default_fstype) != 'xfs' or \
+         {{ _fs_ }}.{{ i }}.size | d(filesystems__default_size) is not match('-')",
 
         {# Exhaustivity is not a goal on its own. This is just a kind of example
            of checking optional parameters. Think if you really want to check
            permission values in octal as well as litteral formats for every case
            encountered... -#}
         "{{ _fs_ }}.{{ i }}.passno is undefined or {{ _fs_ }}.{{ i }}.passno in [0, 2, '0', '2']",
-        "{{ _fs_ }}.{{ i }}.passno is defined or filesystems__default_passno | d(0) in [0, 2, '0', '2']"
+        "{{ _fs_ }}.{{ i }}.passno is defined or filesystems__default_passno | d(0) in [0, 2, '0', '2']",
+        {% endif %}
+
+        {# placeholder (to not have to manage comma above); these two syntaxes
+           (filesystems__fslist.0 or filesystems__list[0]) are equivalent. -#}
+        "{{ _fs_ }}.{{ i }} == {{ _fs_ }}[{{ i }}]"
         {{ '' if loop.last else ',' }}{% endfor %}
       ]
 
