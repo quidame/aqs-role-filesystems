@@ -25,7 +25,7 @@
 
 - import_tasks: umount.yml
 
-- name: "unmount filesystems"
+- name: "remove records in /etc/fstab"
   mount:
     path: "{{ _fs_item.path }}"
     state: absent
