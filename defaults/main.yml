@@ -83,21 +83,24 @@ filesystems__parents: {}
 filesystems__default_vg: vg0
 filesystems__default_size: 512M
 filesystems__default_fstype: ext4
-#filesystems__default_force:     OMIT
-#filesystems__default_resisefs:  OMIT
-#filesystems__default_lvol_opts: OMIT
-#filesystems__default_pvs:       OMIT
-#filesystems__default_shrink:    OMIT
-#filesystems__default_mkfs_opts: OMIT
-#filesystems__default_backup:    OMIT
-#filesystems__default_dump:      OMIT
-#filesystems__default_mountopts: OMIT
-#filesystems__default_passno:    OMIT
-#filesystems__default_attr:      OMIT
-#filesystems__default_group:     OMIT
-#filesystems__default_mode:      OMIT
-#filesystems__default_owner:     OMIT
-#filesystems__default_selevel:   OMIT
-#filesystems__default_serole:    OMIT
-#filesystems__default_setype:    OMIT
-#filesystems__default_seuser:    OMIT
+filesystems__default_force: false
+filesystems__default_force_lvol: "{{ filesystems__default_force }}"
+filesystems__default_force_mkfs: "{{ filesystems__default_force }}"
+filesystems__default_force_kill: "{{ filesystems__default_force }}"
+#filesystems__default_resisefs:   OMIT
+#filesystems__default_lvol_opts:  OMIT
+#filesystems__default_pvs:        OMIT
+#filesystems__default_shrink:     OMIT
+#filesystems__default_mkfs_opts:  OMIT
+#filesystems__default_backup:     OMIT
+#filesystems__default_dump:       OMIT
+#filesystems__default_mountopts:  OMIT
+#filesystems__default_passno:     OMIT
+#filesystems__default_attr:       OMIT
+#filesystems__default_group:      OMIT
+#filesystems__default_mode:       OMIT
+#filesystems__default_owner:      OMIT
+#filesystems__default_selevel:    OMIT
+#filesystems__default_serole:     OMIT
+#filesystems__default_setype:     OMIT
+#filesystems__default_seuser:     OMIT
