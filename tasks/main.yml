@@ -102,7 +102,9 @@
           "fstype": "%s" % (d.fstype | d(filesystems__default_fstype)),
           "path": "%s" % (d.path | regex_replace('/+$', '') | regex_replace('/+', '/')),
           "device": "/dev/mapper/%s-%s" % (d.vg | d(filesystems__default_vg) | replace('-','--'),
-            d.lv | replace('-','--'))
+            d.lv | replace('-','--')),
+          "force_lvol": d.force_lvol | d(d.force | d(filesystems__default_force_lvol)) | bool,
+          "force_mkfs": d.force_mkfs | d(d.force | d(filesystems__default_force_mkfs)) | bool
           } %}
         {% elif filesystems__action in ['unset', 'umount'] %}
         {% set D = {
@@ -110,7 +112,9 @@
           "fstype": "%s" % (d.fstype | d(filesystems__default_fstype)),
           "path": "%s" % (d.path | regex_replace('/+$', '') | regex_replace('/+', '/')),
           "device": "/dev/mapper/%s-%s" % (d.vg | d(filesystems__default_vg) | replace('-','--'),
-            d.lv | replace('-','--'))
+            d.lv | replace('-','--')),
+          "force_lvol": d.force_lvol | d(d.force | d(filesystems__default_force_lvol)) | bool,
+          "force_kill": d.force_kill | d(d.force | d(filesystems__default_force_kill)) | bool
           } %}
         {% endif %}
         {{ d | combine(D) }}{{ '' if loop.last else ',' }}
@@ -150,8 +154,8 @@
                 # the same value than 'force', that defaults itself to False.
               -#}
               {% set D = {
-                "resizefs":  d.force | d(filesystems__default_force|d(False)) | bool,
-                "shrink": d.force | d(filesystems__default_force|d(False)) | bool
+                "resizefs":  d.force_lvol | bool,
+                "shrink": d.force_lvol | bool
                 } %}
             {% endif %}
 
