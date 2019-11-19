@@ -40,3 +40,22 @@ filesystems__update_paths: True
 # before ending. Defaults to True.
 #
 filesystems__validate: True
+
+
+################################################################################
+## filesystems__units
+#
+# Dictionary of size units. Note that even if vgs, pvs and lvs commands make use
+# of case sensitive units (vg_extent_size = 4194304B = 4096.00k = 4.00m = 4.19M
+# = 4194.30K), lvcreate (called by ansible's lvol) and lvresize do not.
+#
+filesystems__units:
+  B: "{{ 1024 | pow(0) | int }}"
+  k: "{{ 1024 | pow(1) | int }}"
+  K: "{{ 1024 | pow(1) | int }}"
+  m: "{{ 1024 | pow(2) | int }}"
+  M: "{{ 1024 | pow(2) | int }}"
+  g: "{{ 1024 | pow(3) | int }}"
+  G: "{{ 1024 | pow(3) | int }}"
+  t: "{{ 1024 | pow(4) | int }}"
+  T: "{{ 1024 | pow(4) | int }}"
