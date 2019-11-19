@@ -63,10 +63,10 @@
           "fstype": "{{ p.0.fstype }}",
           "new": { "dev": "{{ p.1.dev }}", "dir": "{{ p.1.dir }}" },
           "old": { "dev": "{{ p.0.dev }}", "dir": "{{ p.0.dir }}" },
-          {% if p.0.dev == p.1.dev %}
-          "source": "{{ p.0.dir }}", "target": "{{ p.1.dir }}", "type": "dir"
-          {% else %}
+          {% if p.0.dev != p.1.dev %}
           "source": "{{ p.0.dev }}", "target": "{{ p.1.dev }}", "type": "dev"
+          {% else %}
+          "source": "{{ p.0.dir }}", "target": "{{ p.1.dir }}", "type": "dir"
           {% endif %}
         }{{ '' if loop.last else ',' }}
         {% endfor %}
