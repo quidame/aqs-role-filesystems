@@ -74,7 +74,7 @@
         "{{ _fs_ }}.{{ i }}.path is defined",
         {# No first level directory, supports trailing / or consecutive /, since
            this will be normalized before doing anything - except overwrite the
-           file /etc/fstab for the same reason -#}
+           file /etc/fstab, that will be done first for the same reason -#}
         "{{ _fs_ }}.{{ i }}.path is regex('^(/+[^/]+){2,}$')",
 
         "{{ _fs_ }}.{{ i }}.lv is defined",
@@ -88,6 +88,9 @@
         "{{ _fs_ }}.{{ i }}.vg is undefined or {{ _fs_ }}.{{ i }}.vg in ansible_lvm.vgs", {# The VG exists -#}
         "{{ _fs_ }}.{{ i }}.vg is defined or filesystems__default_vg in ansible_lvm.vgs",
 
+        {# The filesystem type, the volume size or the mount options don't
+           matter when removing all this. So we perform a triage here too.
+        -#}
         {% if filesystems__action in ['setup'] %}
         "{{ _fs_ }}.{{ i }}.size is undefined or {{ _fs_ }}.{{ i }}.size is regex('^[+-]?[1-9][0-9]*([BkKmMgGtT]|%(VG|FREE|PVS))$')",
         "{{ _fs_ }}.{{ i }}.size is defined or filesystems__default_size is regex('^[+-]?[1-9][0-9]*([BkKmMgGtT]|%(VG|FREE|PVS))$')",
@@ -105,6 +108,7 @@
            encountered... -#}
         "{{ _fs_ }}.{{ i }}.passno is undefined or {{ _fs_ }}.{{ i }}.passno in [0, 2, '0', '2']",
         "{{ _fs_ }}.{{ i }}.passno is defined or filesystems__default_passno | d(0) in [0, 2, '0', '2']",
+
         {% endif %}
 
         {# placeholder (to not have to manage comma above); these two syntaxes
