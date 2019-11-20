@@ -73,14 +73,14 @@
 - name: "create missing directories with non-default properties"
   file:
     path: "{{ _fs_parents_item }}"
-    attr:    "{{ filesystems__parents.attr    | default(omit) }}"
-    mode:    "{{ filesystems__parents.mode    | default(omit) }}"
-    owner:   "{{ filesystems__parents.owner   | default(omit) }}"
-    group:   "{{ filesystems__parents.group   | default(omit) }}"
-    selevel: "{{ filesystems__parents.selevel | default(omit) }}"
-    serole:  "{{ filesystems__parents.serole  | default(omit) }}"
-    setype:  "{{ filesystems__parents.setype  | default(omit) }}"
-    seuser:  "{{ filesystems__parents.seuser  | default(omit) }}"
+    attr:    "{{ filesystems__parents.attr    | d(omit) }}"
+    mode:    "{{ filesystems__parents.mode    | d(omit) }}"
+    owner:   "{{ filesystems__parents.owner   | d(omit) }}"
+    group:   "{{ filesystems__parents.group   | d(omit) }}"
+    selevel: "{{ filesystems__parents.selevel | d(omit) }}"
+    serole:  "{{ filesystems__parents.serole  | d(omit) }}"
+    setype:  "{{ filesystems__parents.setype  | d(omit) }}"
+    seuser:  "{{ filesystems__parents.seuser  | d(omit) }}"
     state: directory
   loop: "{{ __tempvar0__ }}"
   loop_control:

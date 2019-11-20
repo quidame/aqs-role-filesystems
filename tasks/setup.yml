@@ -52,12 +52,12 @@
   lvol:
     lv:       "{{ _fs_item.lv }}"
     vg:       "{{ _fs_item.vg }}"
-    size:     "{{ _fs_item.size }}"
+    size:     "{{ _fs_item.expected_size | d(_fs_item.size) }}"
     force:    "{{ _fs_item.force_lvol }}"
-    opts:     "{{ _fs_item.lvol_opts | default(filesystems__default_lvol_opts | default(omit)) }}"
-    pvs:      "{{ _fs_item.pvs       | default(filesystems__default_pvs       | default(omit)) }}"
-    resizefs: "{{ _fs_item.resizefs  | default(filesystems__default_resizefs  | default(omit)) }}"
-    shrink:   "{{ _fs_item.shrink    | default(filesystems__default_shrink    | default(omit)) }}"
+    resizefs: "{{ _fs_item.resizefs }}"
+    shrink:   "{{ _fs_item.shrink }}"
+    opts:     "{{ _fs_item.lvol_opts | d(filesystems__default_lvol_opts | d(omit)) }}"
+    pvs:      "{{ _fs_item.pvs       | d(filesystems__default_pvs       | d(omit)) }}"
     state: present
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
@@ -79,11 +79,10 @@
 #
 - name: "create filesystems on Logical Volumes"
   filesystem:
-    dev:      "{{ _fs_item.device }}"
-    fstype:   "{{ _fs_item.fstype }}"
-    force:    "{{ _fs_item.force_mkfs }}"
-    opts:     "{{ _fs_item.mkfs_opts | default(filesystems__default_mkfs_opts | default(omit)) }}"
-    resizefs: "{{ _fs_item.resizefs  | default(filesystems__default_resizefs  | default(omit)) }}"
+    device: "{{ _fs_item.device }}"
+    fstype: "{{ _fs_item.fstype }}"
+    force:  "{{ _fs_item.force_mkfs }}"
+    opts:   "{{ _fs_item.mkfs_opts | d(filesystems__default_mkfs_opts | d(omit)) }}"
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
     loop_var: _fs_item
@@ -109,10 +108,10 @@
     path:   "{{ _fs_item.path }}"
     src:    "{{ _fs_item.device }}"
     fstype: "{{ _fs_item.fstype }}"
-    opts:   "{{ _fs_item.mountopts | default(filesystems__default_mountopts | default(omit)) }}"
-    dump:   "{{ _fs_item.dump      | default(filesystems__default_dump      | default(omit)) }}"
-    passno: "{{ _fs_item.passno    | default(filesystems__default_passno    | default(omit)) }}"
-    backup: "{{ _fs_item.backup    | default(filesystems__default_backup    | default(omit)) }}"
+    opts:   "{{ _fs_item.mountopts | d(filesystems__default_mountopts | d(omit)) }}"
+    dump:   "{{ _fs_item.dump      | d(filesystems__default_dump      | d(omit)) }}"
+    passno: "{{ _fs_item.passno    | d(filesystems__default_passno    | d(omit)) }}"
+    backup: "{{ _fs_item.backup    | d(filesystems__default_backup    | d(omit)) }}"
     state: mounted
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
@@ -130,14 +129,14 @@
 - name: "update access permissions to the roots of filesystems"
   file:
     path:    "{{ _fs_item.path }}"
-    attr:    "{{ _fs_item.attr    | default(filesystems__default_attr    | default(omit)) }}"
-    mode:    "{{ _fs_item.mode    | default(filesystems__default_mode    | default(omit)) }}"
-    owner:   "{{ _fs_item.owner   | default(filesystems__default_owner   | default(omit)) }}"
-    group:   "{{ _fs_item.group   | default(filesystems__default_group   | default(omit)) }}"
-    selevel: "{{ _fs_item.selevel | default(filesystems__default_selevel | default(omit)) }}"
-    serole:  "{{ _fs_item.serole  | default(filesystems__default_serole  | default(omit)) }}"
-    setype:  "{{ _fs_item.setype  | default(filesystems__default_setype  | default(omit)) }}"
-    seuser:  "{{ _fs_item.seuser  | default(filesystems__default_seuser  | default(omit)) }}"
+    attr:    "{{ _fs_item.attr    | d(filesystems__default_attr    | d(omit)) }}"
+    mode:    "{{ _fs_item.mode    | d(filesystems__default_mode    | d(omit)) }}"
+    owner:   "{{ _fs_item.owner   | d(filesystems__default_owner   | d(omit)) }}"
+    group:   "{{ _fs_item.group   | d(filesystems__default_group   | d(omit)) }}"
+    selevel: "{{ _fs_item.selevel | d(filesystems__default_selevel | d(omit)) }}"
+    serole:  "{{ _fs_item.serole  | d(filesystems__default_serole  | d(omit)) }}"
+    setype:  "{{ _fs_item.setype  | d(filesystems__default_setype  | d(omit)) }}"
+    seuser:  "{{ _fs_item.seuser  | d(filesystems__default_seuser  | d(omit)) }}"
     state: directory
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
