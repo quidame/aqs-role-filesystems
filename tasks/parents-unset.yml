@@ -79,7 +79,7 @@
     __tempvar0__: |
       [
         {% for s in _fs_parents_stat_.results if
-          s.stat.exists and s.stat.nlink in [2,3] and s._fs_parents_item is not match( '/[^/]*$' ) %}
+          s.stat.exists and s.stat.isdir and s._fs_parents_item is not match( '/[^/]*$' ) %}
         "{{ s._fs_parents_item }}"{{ '' if loop.last else ',' }}
         {% endfor %}
       ]
