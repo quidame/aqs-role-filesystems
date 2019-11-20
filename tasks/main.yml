@@ -34,6 +34,25 @@
 #
 - import_tasks: normalize-fstab.yml
 
+#- import_tasks: fixes.yml
+
+
+################################################################################
+# GET MORE FACTS
+#
+# Retrieve all relevant info we'll need further.
+# To make use of this registered variable:
+# dictlist: "{{ filesystems__lvs.stdout | from_json | json_query('report[*].lv') }}"
+#
+- name: "get relevant info about Logical Volumes with 'lvs'"
+  command: >
+    lvs
+    --options vg_name,vg_size,vg_free,vg_extent_size,lv_size,lv_dm_path
+    --reportformat json
+    --units B
+    --nosuffix
+  register: filesystems__lvs_command
+  changed_when: false
 
 
 
@@ -67,7 +86,9 @@
         ]
       loop_control:
         loop_var: __fs__dictlist__
-        label: { "path": "{{ __fs__dictlist__.0.path }}" }
+        label: {
+          "device": "{{ __fs__dictlist__.0.device }}",
+          "path": "{{ __fs__dictlist__.0.path }}" }
 
 
     ############################################################################
@@ -88,6 +109,9 @@
   # Block vars are set for all tasks of the block, and are available for the
   # more specific tasks vars.
   vars:
+    # Get the list of LVs with useful fields from the command above
+    filesystems__lvs: "{{ filesystems__lvs_command.stdout | from_json | json_query('report[*].lv') | flatten }}"
+
     # Normalize user input, i.e. fill missing but mandatory fields with default
     # values provisionned in filesystems__default_* variables. Also override
     # the 'path' by removing trailing slash and double slash. And append a key
@@ -103,7 +127,6 @@
           "path": "%s" % (d.path | regex_replace('/+$', '') | regex_replace('/+', '/')),
           "device": "/dev/mapper/%s-%s" % (d.vg | d(filesystems__default_vg) | replace('-','--'),
             d.lv | replace('-','--')),
-          "force_lvol": d.force_lvol | d(d.force | d(filesystems__default_force_lvol)) | bool,
           "force_mkfs": d.force_mkfs | d(d.force | d(filesystems__default_force_mkfs)) | bool
           } %}
         {% elif filesystems__action in ['unset', 'umount'] %}
@@ -113,7 +136,6 @@
           "path": "%s" % (d.path | regex_replace('/+$', '') | regex_replace('/+', '/')),
           "device": "/dev/mapper/%s-%s" % (d.vg | d(filesystems__default_vg) | replace('-','--'),
             d.lv | replace('-','--')),
-          "force_lvol": d.force_lvol | d(d.force | d(filesystems__default_force_lvol)) | bool,
           "force_kill": d.force_kill | d(d.force | d(filesystems__default_force_kill)) | bool
           } %}
         {% endif %}
@@ -124,61 +146,134 @@
     # Something else to do ? Maybe it's not a good idea to mix user input and
     # gathered facts (ansible_mounts, ansible_devices, ansible_lvm) so early.
     # But it makes sense to avoid common mistakes about LV and FS resizing...
+    # This is mainly about resizing.
     filesystems__fslist_preprocess_1: |
       [
-        {% if filesystems__action in ['setup'] %}
         {% for d in filesystems__fslist_preprocess_0 %}
-          {#
-            # This will be to check if d.device has d.fstype filesystem type and
-            # is mounted on d.path
-          -#}
-          {% set query_device = '[?mount == `%s`].device' % d.path %}
-          {% set query_fstype = '[?mount == `%s`].fstype' % d.path %}
-          {% set D = {} %}
+        {% set D = {} %}
+        {% if filesystems__action in ['setup'] %}
 
           {#
-            # ext4 can be extended when mounted or not; reduced when unmounted.
-            # obviously, if the size string begins with a plus sign (+), there
-            # is no need to worry about shrink parameter.
+            # 1. The target LV already exists. Get its current size (in bytes)
           -#}
-          {% if d.fstype in ['ext4'] %}
+          {% if d.device in filesystems__lvs | json_query('[*].lv_dm_path') %}
+            {% set current_size = filesystems__lvs | json_query('[?lv_dm_path == `%s`].lv_size' % d.device)
+              | first | int %}
+            {% set D = D | combine({
+              "current_size": current_size
+              }) %}
+          {#
+            # 2. The target LV seems to not exist, except the target mountpoint
+            #    is currently active. So it's just a matter of renaming of an
+            #    existing LV. Do nothing if the user doesn't want to rename LV
+            #    on the fly.
+          -#}
+          {% elif d.path in ansible_mounts | json_query('[*].mount') and filesystems__update_paths | bool %}
+            {% set device_to_rename = ansible_mounts | json_query('[?mount == `%s`].device' % d.path) | first %}
+            {% set current_size = filesystems__lvs | json_query('[?lv_dm_path == `%s`].lv_size' % device_to_rename)
+              | first | int %}
+            {% set D = D | combine({
+              "device_to_rename": "%s" % device_to_rename,
+              "current_size": current_size
+              }) %}
+          {% endif %}
+
+          {#
+            # WORKAROUND
+            # lvol module supports almost all size formats that are supported
+            # by lvcreate, lvextend and lvreduce. Almost all but +2G, -512m and
+            # the likes. So this is a workaround to accept +1G as a valid size.
+            # We will save the requested size into a new dictionary key, and
+            # override the 'size' value. This piece of code is to compute the
+            # new value, absolute, in 'M' units (or 'm', i.e. 1024×1024 bytes)
+          -#}
+          {% if d.size is match('[-+][1-9][0-9]*[BkKmMgGtT]$') %}
+            {% set size_amount = d.size | regex_replace('^.(.+).$', '\\1') | int %}
+            {% set size_unit = d.size | regex_replace('^.*(.)$', '\\1') %}
+            {% set __bytes__ = size_amount * filesystems__units[size_unit]|int %}
             {% if d.size is match('\+') %}
-            {% set D = { "resizefs": true } %}
+              {% set expected = (current_size|d(0) + __bytes__) | int %}
+            {% elif current_size is defined %}
+              {% set expected = (current_size|int - __bytes__) | int %}
             {% endif %}
-            {% if d.device not in ansible_mounts | json_query('[*].device')
-              and d.shrink is undefined
-              and filesystems__default_shrink is undefined %}
-              {#
-                # if the device is not mounted, and 'shrink' is not defined at
-                # all (neither for this fs nor as default), we simply set it to
-                # the same value than 'force', that defaults itself to False.
-              -#}
-              {% set D = {
-                "resizefs":  d.force_lvol | bool,
-                "shrink": d.force_lvol | bool
-                } %}
-            {% endif %}
-
-          {#
-            # xfs can only be extended, and only if mounted; not shrinkable fs.
-          -#}
-          {% elif d.fstype in ['xfs'] %}
-            {% set D = { "shrink": false } %}
-            {% if [d.device] == ansible_mounts | json_query(query_device)
-              and [d.fstype] == ansible_mounts | json_query(query_fstype)
-              and d.resizefs is undefined
-              and filesystems__default_resizefs is undefined %}
-              {% set D = { "shrink": false, "resizefs": true } %}
+            {% if expected is defined %}
+              {% set modulo = filesystems__lvs | json_query('[?vg_name == `%s`].vg_extent_size' % d.vg) | first | int %}
+              {% set expected_size = (((expected / modulo) | round(method='ceil')) * modulo) | int %}
+              {% set D = D | combine({
+                "requested_size": "%s" % d.size,
+                "size": "%sM" % ((expected_size / filesystems__units.M|int) | int | string)
+                }) %}
             {% endif %}
           {% endif %}
+
+          {#
+            # We assume that if the user says +SIZE, it means 'extend of SIZE'
+            # and if he says '-SIZE', it means 'reduce of SIZE'.
+          -#}
+          {% if d.size is match('\+') %}
+            {% set allow_extend = True %}
+            {% set allow_reduce = False %}
+          {% elif d.size is match('-') %}
+            {% set allow_extend = False %}
+            {% set allow_reduce = True %}
+          {% else %}
+            {% set allow_extend = d.allow_extend | d(filesystems__allow_extend | d(True)) | bool %}
+            {% set allow_reduce = d.allow_reduce | d(filesystems__allow_reduce | d(False)) | bool %}
+          {% endif %}
+
+          {#
+            # ext4 can be extended when mounted or not; can be reduced when
+            # unmounted.
+          -#}
+          {% if d.fstype in ['ext4'] %}
+            {% if d.device in ansible_mounts | json_query('[*].device') %}
+              {% set allow_reduce = False %}
+            {% endif %}
+          {#
+            # xfs can only be extended, and only when mounted; can't be reduced
+            # at all.
+          -#}
+          {% elif d.fstype in ['xfs'] %}
+            {% set allow_reduce = False %}
+            {% if d.device not in ansible_mounts | json_query('[*].device') %}
+              {% set allow_extend = False %}
+            {% endif %}
+          {% endif %}
+
+          {#
+            # If the device doesn't already exist, what about resizing it ?
+          -#}
+          {% if current_size|d(0) == 0 %}
+            {% set allow_extend = False %}
+            {% set allow_reduce = False %}
+          {% endif %}
+
+          {% if allow_reduce %}
+            {% set resizefs = True %}
+            {% set shrink = True %}
+            {% set force = True %}
+          {% elif allow_extend %}
+            {% set resizefs = True %}
+            {% set shrink = False %}
+            {% set force = False %}
+          {% else %}
+            {% set resizefs = False %}
+            {% set shrink = False %}
+            {% set force = False %}
+          {% endif %}
+
+          {% set D = D | combine({
+            "shrink": d.shrink | d(filesystems__default_shrink | d(shrink)) | bool,
+            "resizefs": d.resizefs | d(filesystems__default_resizefs | d(resizefs)) | bool,
+            "force_lvol": d.force_lvol | d(filesystems__default_force_lvol | d(force)) | bool
+            }) %}
+
+        {% endif %}
         {{ d | combine(D) }}{{ '' if loop.last else ',' }}
         {% endfor %}
-        {% endif %}
       ]
 
-    filesystems__fslist_preprocessed: "{{
-      filesystems__fslist_preprocess_0 if filesystems__action in ['unset', 'umount'] else
-      filesystems__fslist_preprocess_1 if filesystems__action in ['setup'] else [] }}"
+    filesystems__fslist_preprocessed: "{{ filesystems__fslist_preprocess_1 }}"
 
     # The list is sorted against the mountpoints to ensure nested mounts
     # are done in the right order and unmounted in reverse order.
