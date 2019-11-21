@@ -191,12 +191,23 @@
             {% set size_amount = d.size | regex_replace('^.(.+).$', '\\1') | int %}
             {% set size_unit = d.size | regex_replace('^.*(.)$', '\\1') %}
             {% set __bytes__ = size_amount * filesystems__units[size_unit]|int %}
+
             {% if d.size is match('\+') %}
               {% set expected = (current_size|d(0) + __bytes__) | int %}
             {% elif current_size is defined %}
               {% set expected = (current_size|int - __bytes__) | int %}
+            {#
+              # else, if size starts with a '-' and the device doesn't exist,
+              # just leave the user input unchanged. lvol will fail and complain
+              # about unsupported format.
+            -#}
             {% endif %}
+
             {% if expected is defined %}
+              {#
+                # Round size up to the next extent, and convert it in M. Then
+                # prepare to override 'size'.
+              -#}
               {% set modulo = filesystems__lvs | json_query('[?vg_name == `%s`].vg_extent_size' % d.vg) | first | int %}
               {% set expected_size = (((expected / modulo) | round(method='ceil')) * modulo) | int %}
               {% set D = D | combine({
@@ -207,8 +218,20 @@
           {% endif %}
 
           {#
-            # We assume that if the user says +SIZE, it means 'extend of SIZE'
-            # and if he says '-SIZE', it means 'reduce of SIZE'.
+            # This part is to ease management of resizing. There are currently
+            # 3 module parameters that may allow or disallow resizing, that may
+            # also depend on filesystem type and direction of resizing. For the
+            # module itself, the booleans 'resizefs', 'shrink', 'force' product
+            # 8 combinations, some leading to fail because of inconsistency. So
+            # we use two dedicated variables, that are more explicit for the
+            # user, and that preset 'resizefs', 'shrink' and 'force' to a valid
+            # combination. Then they will be overridden due to filesystem
+            # capabilities, because user needs fine-grained control over them.
+          -#}
+
+          {#
+            # First, we assume that if the user says +SIZE, it means 'extend of
+            # SIZE'; and if he says '-SIZE', it means 'reduce of SIZE'.
           -#}
           {% if d.size is match('\+') %}
             {% set allow_extend = True %}
@@ -243,7 +266,7 @@
           {#
             # If the device doesn't already exist, what about resizing it ?
           -#}
-          {% if current_size|d(0) == 0 %}
+          {% if current_size is undefined %}
             {% set allow_extend = False %}
             {% set allow_reduce = False %}
           {% endif %}
