@@ -83,10 +83,10 @@ filesystems__parents: {}
 filesystems__default_vg: vg0
 filesystems__default_size: 512M
 filesystems__default_fstype: ext4
-filesystems__default_force: false
-#filesystems__default_force_lvol: "{{ filesystems__default_force }}"
+filesystems__default_force: False
 filesystems__default_force_mkfs: "{{ filesystems__default_force }}"
 filesystems__default_force_kill: "{{ filesystems__default_force }}"
+#filesystems__default_force_lvol: "{{ filesystems__default_force }}"
 #filesystems__default_resisefs:   OMIT
 #filesystems__default_lvol_opts:  OMIT
 #filesystems__default_pvs:        OMIT
