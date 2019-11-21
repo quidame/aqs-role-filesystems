@@ -5,9 +5,9 @@
 # Tasks to setup filesystems as well as their underlying Logical Volumes.
 
 
-# This will compare running state (ansible_mounts) with user input variable
-# (filesystems__fslist) to know if something is to be renamed. This is the
-# first step and builds the variable _fs_rename_.
+# This will compare running state (ansible_mounts) with preprocessed user input
+# (stored in __fs__dictlist__) to quickly know if something is to be renamed.
+# It will set the variable _fs_rename_.
 #
 - import_tasks: cross-facts.yml
 
@@ -34,7 +34,12 @@
 #   - Makes inner filesystems invisible to 'df' for other users
 #
 # Another practice could be to create directories with the same properties
-# than their parent mountpoint, but it seems to be harder to implement
+# than their parent mountpoint, but it seems to be harder to implement. It
+# would consist in:
+# - get the first parent mountpoint (the longer common prefix compared to other
+#   mounts (ansible_mounts)
+# - stat it
+# - set owner:group and permissions based on stat results
 #
 - name: "include tasks to create parent directories with non-default properties"
   include_tasks: parents-setup.yml
