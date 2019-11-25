@@ -85,9 +85,23 @@
 #   Note that this works in serial mode. In sequential mode, _fs_rename_ is a
 #   list of one element, and can't contain submounts.
 #
-- name: "assert that the target of renaming is not already in use"
-  assert:
-    that: |
+- name: "ensure renaming candidates are valid"
+  block:
+
+    - name: "(python2) preset renaming assertions"
+      set_fact:
+        renaming_assertions_for_python2: "{{ renaming_assertions }}"
+      tags:
+        - "{{ 'never' if ansible_playbook_python | basename is match('python3') else 'always' }}"
+
+    - name: "assert that the target of renaming is not already in use"
+      assert:
+        that: "{{ renaming_assertions | d(renaming_assertions_for_python2) }}"
+
+  vars:
+    __tempvar0__: "{{ ansible_mounts | json_query('[*].mount') }}"
+    __tempvar1__: "{{ _fs_rename_ | json_query('[*].old.dir') }}"
+    renaming_assertions: |
       [
         {% for i in range(0, _fs_rename_ | length) %}
         {% set s = __tempvar0__ | select('search', '^%s/' % _fs_rename_stat_.results[i]._fs_item.old.dir) | list %}
@@ -103,9 +117,6 @@
         {% endif %}{{ '' if loop.last else ',' }}
         {% endfor %}
       ]
-  vars:
-    __tempvar0__: "{{ ansible_mounts | json_query('[*].mount') }}"
-    __tempvar1__: "{{ _fs_rename_ | json_query('[*].old.dir') }}"
 
 
 # Of course, this means mounts are free of running processes.
@@ -117,7 +128,7 @@
 - name: "unmount devices and directories to be renamed"
   mount:
     path: "{{ _fs_item.old.dir }}"
-    state: absent
+    state: unmounted
   loop: "{{ _fs_rename_ | sort(attribute='old.dir') | reverse | list }}"
   loop_control:
     loop_var: _fs_item
@@ -137,6 +148,17 @@
         "{{ m._fs_item.source }}"{{ '' if loop.last else ',' }}
         {% endfor %}
       ]
+
+- import_tasks: parents-setup.yml
+  vars:
+    __mountpoints__: |
+      [
+        {% for m in _fs_rename_unmount_.results if m is changed and m._fs_item.type == "dir" %}
+        "{{ m._fs_item.target }}"{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+  when:
+    - filesystems__parents != {}
 
 
 # The dilemna: when working with system tools that rely on what is exposed by
@@ -166,5 +188,55 @@
           "target": "{{ m._fs_item.target }}",
         }{{ '' if loop.last else ',' }}{% endfor %}
       ]
+  notify:
+    - validate_fstab
+
+
+# Once it will be done, the next task shouldn't modify the file again. Otherwise
+# we could expect duplicated and/or obsolete entries in fstab, that may lead to
+# critical issues when rebooting the host.
+#
+- name: "replace fstab entries"
+  replace:
+    path: /etc/fstab
+    regexp: "(^|\\s){{ _fs_item.source }}(\\s)"
+    replace: "\\1{{ _fs_item.target }}\\2"
+  loop: "{{ _fs_rename_ | json_query('[?type==`dir`]') }}"
+  loop_control:
+    loop_var: _fs_item
+    label: {
+      "move": {
+        "old": "{{ _fs_item.source }}",
+        "new": "{{ _fs_item.target }}",
+        "type": "{{ _fs_item.type }}"
+        },
+      "keep": {
+        "fstype": "{{ _fs_item.fstype }}",
+        "path": "{{ _fs_item.new['dir' if _fs_item.type == 'dev' else 'dev'] }}"
+        }
+      }
+  notify:
+    - validate_fstab
+
+
+# Of course, this means mounts are free of running processes.
+# Unfortunately, we have to unmount devices even if it is possible to rename
+# Logical Volumes on the fly, since some system tools (and so gathered facts)
+# may fall in an out-of-sync and still display the old name of the device.
+# This is the case, for example, of the `df` command, and so 'ansible_mounts'.
+#
+- name: "remount renamed devices and directories"
+  mount:
+    path: "{{ _fs_item.new.dir }}"
+    src: "{{ _fs_item.new.dev }}"
+    fstype: "{{ _fs_item.fstype }}"
+    state: mounted
+  loop: "{{ _fs_rename_ | sort(attribute='new.dir') }}"
+  loop_control:
+    loop_var: _fs_item
+    label: "{{ _fs_item.target }}"
+  when:
+    - filesystems__action in ['setup']
+    - _fs_item.fstype in ['xfs']
   notify:
     - validate_fstab

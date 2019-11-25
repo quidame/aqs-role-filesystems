@@ -27,7 +27,16 @@
 # Then stat will help to find which are removable.
 
 
-- name: "stat directories that could be removed"
+- name: "remove mountpoints"
+  file:
+    path: "{{ _fs_item }}"
+    state: absent
+  loop: "{{ __mountpoints__ }}"
+  loop_control:
+    loop_var: _fs_item
+
+
+- name: "stat parent directories that could be removed"
   stat:
     path: "{{ _fs_parents_item }}"
   loop: "{{ __tempvar0__ | sort | unique | reverse | list }}"
@@ -41,7 +50,7 @@
     __tempvar0__: |
       [
         {% for m in __mountpoints__ %}
-        {% for i in range(0, m.split('/') | length - 2) %}
+        {% for i in range(1, m.split('/') | length - 2) %}
         "{{ m | regex_replace('(/[^/]+){%s}$' % i, '') }}"
         {{ '' if loop.last else ',' }}{% endfor %}
         {{ '' if loop.last else ',' }}{% endfor %}
