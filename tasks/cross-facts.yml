@@ -3,6 +3,11 @@
 # file: tasks/cross-facts.yml
 
 
+- name: "display __fs__dictlist__"
+  debug:
+    var: __fs__dictlist__
+
+
 # We'll rely on ansible_mounts in the next task, so make it reliable (that's
 # mandatory in sequential mode, and highly recommended in serial mode).
 #
