@@ -13,20 +13,20 @@
   block:
     - name: "(python2) preset role assertions"
       set_fact:
-        filesystems__role_assertions: "{{ filesystems__role_assertions }}"
+        filesystems__role_assertions_for_python2: "{{ filesystems__role_assertions }}"
       tags:
         - "{{ 'never' if ansible_playbook_python | basename is match('python3') else 'always' }}"
 
     - name: "check point : role prerequisites and requirements"
       assert:
-        that: "{{ filesystems__role_assertions }}"
+        that: "{{ filesystems__role_assertions | d(filesystems__role_assertions_for_python2) }}"
 
   vars:
     filesystems__role_assertions: |
       [
         {# Check OS compatibility and ansible version (should match meta/) -#}
-        "( ansible_distribution in ['Debian'] and ansible_distribution_version is version('9.0', '>=') ) or \
-         ( ansible_distribution in ['Redhat'] and ansible_distribution_version is version('7.0', '>=') )",
+        "( ansible_os_family in ['Debian'] and ansible_distribution_version is version('9.0', '>=') ) or \
+         ( ansible_os_family in ['RedHat'] and ansible_distribution_version is version('7.0', '>=') )",
         "ansible_version.full is version('2.7', '>=')",
 
         {# Check value (keyword) of role variables controlling its behaviour -#}
@@ -62,7 +62,12 @@
         "fstab_devicelinks is undefined",
         "fstab_filesystems is undefined",
         "fstab_mountpoints is undefined",
-        "fstab_assertions is undefined or ansible_playbook_python | basename is not match('python3')",
+        "fstab_assertions is undefined",
+        "fstab_assertions_for_python2 is undefined or ansible_playbook_python | basename is not match('python3')",
+        "renaming_assertions is undefined",
+        "renaming_assertions_for_python2 is undefined or ansible_playbook_python | basename is not match('python3')",
+        "filesystems__role_assertions is undefined",
+        "filesystems__role_assertions_for_python2 is undefined or ansible_playbook_python | basename is not match('python3')",
 
         {# 3. Variables set in loop_var -#}
         "_fs_item is undefined",
@@ -89,7 +94,9 @@
            file /etc/fstab, that will be done first for the same reason -#}
         "{{ _fs_ }}.{{ i }}.path is regex('^(/+[^/]+){2,}$')",
 
-        "{{ _fs_ }}.{{ i }}.lv is defined",
+        {% set canonic_path = filesystems__fslist[i].path | regex_replace('/+', '/') | regex_replace('/$', '') %}
+        "{{ _fs_ }}.{{ i }}.lv is defined or \
+        '{{ canonic_path }}' in ansible_mounts | json_query('[*].mount')",
         {# This is the LV name, not the path of the device (nor a symlink to
            it). We accept everything is supported by LVM. Dashes (-), that need
            to be translated to double-dashes (--) to match the device-mapper
@@ -141,10 +148,3 @@
 
         {% endfor %}
       ]
-
-
-# Display the data structure of the main variable
-- name: "show filesystems to {{ filesystems__action }}"
-  debug:
-    var: filesystems__fslist
-    verbosity: 2
