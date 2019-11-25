@@ -13,25 +13,34 @@
   changed_when: false
 
 
+# This will prevent looping over long lists in the 'stat' task below. The cost
+# of 'setup' with a filter is probably much less. We will assume that devices
+# and mounts in ansible_mounts don't need to be stat'd to ensure they exist.
+- name: "regather fact 'ansible_mounts'"
+  setup:
+    filter: ansible_mounts
+
+
 - name: "validate fstab entries"
   block:
 
     - name: "(python2) preset fstab assertions"
       set_fact:
-        fstab_assertions: "{{ fstab_assertions }}"
+        fstab_assertions_for_python2: "{{ fstab_assertions }}"
       tags:
         - "{{ 'never' if ansible_playbook_python | basename is match('python3') else 'always' }}"
 
     - name: "track duplicates, unpredictable names and bad fstypes in /etc/fstab"
       assert:
-        that: "{{ fstab_assertions }}"
+        that: "{{ fstab_assertions | d(fstab_assertions_for_python2) }}"
 
 
-    - name: "check that all devices and mountpoints recorded in /etc/fstab exist"
+    - name: "check that devices and mountpoints recorded in /etc/fstab exist"
       stat:
         path: "{{ fstab_item }}"
         follow: yes
-      loop: "{{ fstab_mountpoints + fstab_devicelinks }}"
+      loop: "{{ ( fstab_mountpoints + fstab_devicelinks )
+                | difference(ansible_mounts | json_query('[*].mount')) }}"
       loop_control:
         loop_var: fstab_item
       register: fstab_path
@@ -80,7 +89,6 @@
   vars:
     # Translate flat fstab content into a dictlist with an additional field
     # (the "link" is to stat devices recorded as UUID=* or LABEL=* in fstab).
-    __tempvar0__: |
     fstab_dicts: |
       [
         {% for fs in fstab_awk.stdout_lines %}{
