@@ -8,18 +8,25 @@
 # '/foo/bar' and '/foo/bar/' don't match. That's all. And neither kernel nor
 # system tools will show directory paths with trailing slashes. So the mount
 # module, with path=/foo/bar and path=/foo/bar/ will create 2 records for
-# the same device, and finally the same mountpoint... Don't worry, this will
-# leave rootfs record (/) untouched.
+# the same device, and finally the same mountpoint...
+# - The first regexp matches things like /foo//bar, /foo/././/./bar, and
+#   even /foo/foobar/../bar, that should all result in /foo/bar
+# - The second regexp matches things like /foo/bar/ and /foo/bar/. (with the
+#   ending dot), that should all result in /foo/bar (don't worry, this will
+#   leave rootfs record (/) untouched)
+# - The third regexp matches things like /dev/VG/LV (with no dash (-) into
+#   VG and LV names), that should result in /dev/mapper/VG-LV
 #
-- name: "cleanup consecutive and trailing / in /etc/fstab to avoid duplicates"
+- name: "canonicalize paths in /etc/fstab to avoid duplicates"
   replace:
     path: /etc/fstab
-    # Use single quotes to not have to escape the baslashes themselves.
     regexp: '{{ fstab_item.regexp }}'
     replace: '{{ fstab_item.replace }}'
   loop:
-    - { regexp: '/+', replace: '/' }
-    - { regexp: '([^\s])/(\s)', replace: '\1\2' }
+    # Use single quotes to not have to escape the baslashes themselves.
+    - { regexp: '(/\.?|(/\.?)*/[a-zA-Z0-9][^/\s]*[a-zA-Z0-9](/\.?)*/\.\.(/\.?)*)+/', replace: '/' }
+    - { regexp: '([^\s])/\.?(\s)', replace: '\1\2' }
+    - { regexp: '^/dev/([^-/\s]+)/([^-/\s]+\s)', replace: '/dev/mapper/\1-\2' }
   loop_control:
     loop_var: fstab_item
   # By the way, the main reason we notify this handler is not to verify the
@@ -30,4 +37,3 @@
 
 
 # Other things to do here ?
-# - Replace /dev/VG/LV by /dev/mapper/VG-LV ? `mount` module will do it.
