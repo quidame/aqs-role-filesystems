@@ -12,9 +12,9 @@
 #
 - name: "kill remaining processes accessing filesystems"
   command: |
-    fuser --kill \
-    -{{ 'KILL' if _fs_item.force_kill else 'TERM' }} \
-    --ismountpoint {{ _fs_item.path }}
+    fuser
+    {% if not ansible_check_mode %}--kill -{{ 'KILL' if _fs_item.force_kill else 'TERM' }}{% endif %}
+    --ismountpoint --mount {{ _fs_item.path }}
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
     loop_var: _fs_item

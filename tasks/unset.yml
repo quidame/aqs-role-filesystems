@@ -59,7 +59,10 @@
 
 
 - name: "wipe filesystem signatures"
-  command: "wipefs --all {{ _fs_item }}"
+  command: |
+    wipefs --all {{ '--no-act' if ansible_check_mode else '' }}
+    {{ '--force' if _fs_item in __fs__dictlist__|json_query('[?force_wipe].device') else '' }}
+    {{ _fs_item }}
   loop: "{{ __tempvar0__ }}"
   loop_control:
     loop_var: _fs_item
