@@ -19,9 +19,34 @@
 
     - name: "check point : role prerequisites and requirements"
       assert:
-        that: "{{ filesystems__role_assertions | d(filesystems__role_assertions_for_python2) }}"
+        that: "{{ filesystems__role_assertions_for_python2 | d(filesystems__role_assertions) }}"
 
   vars:
+    # RATIONALE:
+    # When a mounted LV is renamed (with lvrename or dmsetup), system
+    # commands other than those related to device-mapper are out-of-sync,
+    # as long as the LV is not unmounted. Especially 'df' and 'findmnt',
+    # as well as 'mount', still display the old name of the LV. But these
+    # old good 'blkid' and 'lsblk' work fine. In the same way, gathered
+    # facts are more ore less reliable, as they are based on the same
+    # system tools. And unfortunately, ansible_mounts is not the most
+    # reliable of them. The following piece of code ensures devices in
+    # ansible_mounts exist in ansible_lvm or ansible_devices, etc.
+    filesystems__out_of_sync: "{{ (ansible_mounts
+      | json_query('[*].device')
+      | map('regex_search', '^/dev/mapper/.*')
+      | select('string')
+      | map('basename')
+      | list)
+      | difference(ansible_devices
+      | dict2items
+      | json_query('[*].value.links.ids')
+      | flatten
+      | map('regex_search', 'dm-name-.*')
+      | select('string')
+      | map('regex_replace', 'dm-name-', '')
+      | list) }}"
+
     filesystems__role_assertions: |
       [
         {# Check OS compatibility and ansible version (should match meta/) -#}
@@ -33,9 +58,12 @@
         "filesystems__action in ['setup', 'unset', 'umount']",
         "filesystems__behaviour in ['serial', 'sequential']",
 
-        {# check type of mandatory variables filled by user -#}
+        {# Check type of mandatory variables filled by user -#}
         "filesystems__fslist | type_debug == 'list'",
         "filesystems__parents | type_debug == 'dict'",
+
+        {# Check system internal consistency - See RATIONALE above -#}
+        "filesystems__out_of_sync == []",
 
         {# Some variables are set and used internally and MUST NOT be overridden
            from commmandline. Also note that by checking they are undefined, we
@@ -66,7 +94,6 @@
         "fstab_assertions_for_python2 is undefined or ansible_playbook_python | basename is not match('python3')",
         "renaming_assertions is undefined",
         "renaming_assertions_for_python2 is undefined or ansible_playbook_python | basename is not match('python3')",
-        "filesystems__role_assertions is undefined",
         "filesystems__role_assertions_for_python2 is undefined or ansible_playbook_python | basename is not match('python3')",
 
         {# 3. Variables set in loop_var -#}

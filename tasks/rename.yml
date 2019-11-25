@@ -96,7 +96,7 @@
 
     - name: "assert that the target of renaming is not already in use"
       assert:
-        that: "{{ renaming_assertions | d(renaming_assertions_for_python2) }}"
+        that: "{{ renaming_assertions_for_python2 | d(renaming_assertions) }}"
 
   vars:
     __tempvar0__: "{{ ansible_mounts | json_query('[*].mount') }}"
