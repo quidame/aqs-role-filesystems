@@ -75,6 +75,42 @@ filesystems__parents: {}
 
 
 ################################################################################
+## filesystems__allow_*
+#
+# These variables are to explicitly say if filesystems have to be resized up or
+# down when absolute sizes differ between current LV size and user input. They
+# simply set the 3 booleans involved in resizing operations (resizefs, shrink,
+# force) to consistent values working fine altogether.
+#
+# These two variables are overridden or silently ignored when:
+# - the 'size' starts with a + (allow extend) or a - (allow reduce);
+# - the resizing operation is not doable (xfs can't be reduced, etc);
+# - the LV does not exist yet and has to be created, not resized;
+# And also:
+# - each can be overridden on a per-LV basis, with the dictionary keys
+#   'allow_extend' and 'allow_reduce'
+# - each atomic lvol parameter ('resizefs', 'shrink' and 'force') can still be
+#   overridden on a per-LV basis with the keys 'resizefs', 'shrink' and
+#   'force_lvol', or globally with the matching filesystems__default_* variables
+#
+# if filesystems__allow_reduce == True:
+#    resizefs = True
+#    shrink = True
+#    force = True
+# else, if filesystems__allow_extend == True:
+#    resizefs = True
+#    shrink = False
+#    force = False
+# else:
+#    resizefs = False
+#    shrink = False
+#    force = False
+#
+filesystems__allow_extend: True
+filesystems__allow_reduce: False
+
+
+################################################################################
 ## filesystems__default_*
 #
 # These are the default values, that are applicable to any FS to setup, if not
@@ -86,6 +122,7 @@ filesystems__default_fstype: ext4
 filesystems__default_force: False
 filesystems__default_force_mkfs: "{{ filesystems__default_force }}"
 filesystems__default_force_kill: "{{ filesystems__default_force }}"
+filesystems__default_force_wipe: "{{ filesystems__default_force }}"
 #filesystems__default_force_lvol: "{{ filesystems__default_force }}"
 #filesystems__default_resisefs:   OMIT
 #filesystems__default_lvol_opts:  OMIT

@@ -28,7 +28,9 @@ filesystems__behaviour: "serial"
 #
 # When set to True, this variable allows one to update paths of Logical Volumes
 # or their mountpoints if for an active mount, one (and only one) of the LV name
-# or directory path has changed in filesystems__fslist.
+# or directory path has changed in filesystems__fslist. This feature needs to
+# unmount the filesystem before renaming it or the mountpoint, so processes
+# accessing the fs must be stopped before.
 #
 filesystems__update_paths: True
 
