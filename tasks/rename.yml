@@ -219,11 +219,8 @@
     - validate_fstab
 
 
-# Of course, this means mounts are free of running processes.
-# Unfortunately, we have to unmount devices even if it is possible to rename
-# Logical Volumes on the fly, since some system tools (and so gathered facts)
-# may fall in an out-of-sync and still display the old name of the device.
-# This is the case, for example, of the `df` command, and so 'ansible_mounts'.
+# Remount FS before ending, so XFS can be grown when resizing the LV. Otherwise
+# leave it unmounted, so EXT4 can be reduced when resizing the LV.
 #
 - name: "remount renamed devices and directories"
   mount:
