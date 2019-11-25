@@ -189,19 +189,6 @@
         {% for d in filesystems__fslist_preprocess_1 %}
         {% set D = {} %}
 
-        {% if [d.device] == ansible_mounts | json_query('[?mount == `%s`].device' % d.path) and
-              [d.path] == ansible_mounts | json_query('[?device == `%s`].mount' % d.device) %}
-          {% set status = "mounted" %}
-        {% elif d.device in ansible_mounts | json_query('[*].device') or
-                d.path in ansible_mounts | json_query('[*].mount') %}
-          {% set status = "unknown" %}
-        {% elif d.device in filesystems__lvs | json_query('[*].lv_dm_path') %}
-          {% set status = "unmounted" %}
-        {% else %}
-          {% set status = "absent" %}
-        {% endif %}
-        {% set D = D | combine({"status": "%s" % status}) %}
-
         {% if filesystems__action in ['setup'] %}
 
           {#
