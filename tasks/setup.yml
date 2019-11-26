@@ -57,7 +57,7 @@
   lvol:
     lv:       "{{ _fs_item.lv }}"
     vg:       "{{ _fs_item.vg }}"
-    size:     "{{ _fs_item.expected_size | d(_fs_item.size) }}"
+    size:     "{{ _fs_item.size }}"
     force:    "{{ _fs_item.force_lvol }}"
     resizefs: "{{ _fs_item.resizefs }}"
     shrink:   "{{ _fs_item.shrink }}"
