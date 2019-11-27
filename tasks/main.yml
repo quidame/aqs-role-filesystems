@@ -43,7 +43,7 @@
 # dictlist: "{{ filesystems__lvs.stdout | from_json | json_query('report[*].lv') }}"
 #
 - name: "get relevant info about Logical Volumes with 'lvs'"
-  command: >
+  command: |
     lvs
     --options vg_name,vg_size,vg_free,vg_extent_size,lv_size,lv_dm_path
     --reportformat json
@@ -51,6 +51,7 @@
     --nosuffix
   register: filesystems__lvs_command
   changed_when: false
+  check_mode: false
 
 
 
