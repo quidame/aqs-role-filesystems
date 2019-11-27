@@ -85,38 +85,14 @@
 #   Note that this works in serial mode. In sequential mode, _fs_rename_ is a
 #   list of one element, and can't contain submounts.
 #
-- name: "ensure renaming candidates are valid"
-  block:
-
-    - name: "(python2) preset renaming assertions"
-      set_fact:
-        renaming_assertions_for_python2: "{{ renaming_assertions }}"
-      tags:
-        - "{{ 'never' if ansible_playbook_python | basename is match('python3') else 'always' }}"
-
-    - name: "assert that the target of renaming is not already in use"
-      assert:
-        that: "{{ renaming_assertions_for_python2 | d(renaming_assertions) }}"
-
+- name: "assert that the target of renaming is not already in use"
+  assert:
+    # See in vars/main.yml for details about assertions (based on the following
+    # ad hoc tasks vars)
+    that: "{{ renaming_assertions }}"
   vars:
     __tempvar0__: "{{ ansible_mounts | json_query('[*].mount') }}"
     __tempvar1__: "{{ _fs_rename_ | json_query('[*].old.dir') }}"
-    renaming_assertions: |
-      [
-        {% for i in range(0, _fs_rename_ | length) %}
-        {% set s = __tempvar0__ | select('search', '^%s/' % _fs_rename_stat_.results[i]._fs_item.old.dir) | list %}
-        "{{ __tempvar1__ | sort }} | intersect({{ s | sort }}) == {{ s | sort }}",
-
-        {% if _fs_rename_[i].type == "dev" %}
-        'not _fs_rename_stat_.results.{{ i }}.stat.exists'
-
-        {% elif _fs_rename_[i].type == "dir" %}
-        '( not _fs_rename_stat_.results.{{ i }}.stat.exists ) or \
-         ( _fs_rename_stat_.results.{{ i }}.stat.isdir and _fs_rename_stat_.results.{{ i }}.stat.nlink == "2" )',
-        '_fs_rename_stat_.results.{{ i }}._fs_item.target not in ansible_mounts | json_query("[*].mount")'
-        {% endif %}{{ '' if loop.last else ',' }}
-        {% endfor %}
-      ]
 
 
 # Of course, this means mounts are free of running processes.
