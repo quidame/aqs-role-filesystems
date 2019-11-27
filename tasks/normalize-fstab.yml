@@ -16,6 +16,7 @@
 #   leave rootfs record (/) untouched)
 # - The third regexp matches things like /dev/VG/LV (with no dash (-) into
 #   VG and LV names), that should result in /dev/mapper/VG-LV
+# - The fourth is to remove trailing slashes (as usual)
 #
 - name: "canonicalize paths in /etc/fstab to avoid duplicates"
   replace:
@@ -27,6 +28,7 @@
     - { regexp: '(/\.?|(/\.?)*/[a-zA-Z0-9][^/\s]*[a-zA-Z0-9](/\.?)*/\.\.(/\.?)*)+/', replace: '/' }
     - { regexp: '([^\s])/\.?(\s)', replace: '\1\2' }
     - { regexp: '^/dev/([^-/\s]+)/([^-/\s]+\s)', replace: '/dev/mapper/\1-\2' }
+    - { regexp: '[ \t]+$', replace: '' }
   loop_control:
     loop_var: fstab_item
   # By the way, the main reason we notify this handler is not to verify the
