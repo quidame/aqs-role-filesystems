@@ -139,6 +139,7 @@ filesystems__role_assertions: |
     "{{ _fs_ }}.{{ i }}.path is regex('^(/+[^/]+){2,}$')",
 
     {% set canonic_path = filesystems__fslist[i].path | regex_replace('/+', '/') | regex_replace('/$', '') %}
+
     "{{ _fs_ }}.{{ i }}.lv is defined or \
     '{{ canonic_path }}' in ansible_mounts | json_query('[*].mount')",
     {# This is the LV name, not the path of the device (nor a symlink to
@@ -185,6 +186,37 @@ filesystems__role_assertions: |
        encountered... -#}
     "{{ _fs_ }}.{{ i }}.passno is undefined or {{ _fs_ }}.{{ i }}.passno in [0, 2, '0', '2']",
     "{{ _fs_ }}.{{ i }}.passno is defined or filesystems__default_passno | d(0) in [0, 2, '0', '2']",
+
+    {# There is probably no chance to cleanly setup a new mountpoint if an
+       existing one would be a subdirectory of the new one, i.e. if nested
+       mounts are not set in the proper order.
+       For example:
+         /var/projects/apa_nna/apache_2.4 is an active mountpoint
+         /var/projects is to be set as a mountpoint
+       In this example, the mount on /var/projects will hide the one set on
+       /var/projects/apa_nna/apache_2.4, and this is not what we want !!!
+       This is aware of that and takes care to:
+         - not fail if the wanted mount is active and action=setup
+         - not fail if the mount is not set and action=unset
+         - not fail if the mount is set, action=unset and submounts are listed
+           to be unset too
+    -#}
+    {% set ismounted = canonic_path in ansible_mounts | json_query('[*].mount') %}
+    {% set submounts = ansible_mounts
+      | json_query('[*].mount')
+      | map('regex_search', '^%s/.*' % canonic_path)
+      | select('string')
+      | list %}
+    {% set sub_paths = filesystems__fslist
+      | json_query('[*].path')
+      | map('regex_replace', '/+', '/')
+      | map('regex_replace', '/$', '')
+      | map('regex_search', '^%s/.*' % canonic_path)
+      | select('string')
+      | list %}
+    "( {{ submounts }} == [] ) or \
+     ( filesystems__action in ['setup'] and {{ ismounted }} ) or \
+     ( filesystems__action in ['unset', 'umount'] and {{ submounts | difference(sub_paths) }} == [] )",
 
     {# placeholder (to not worry about commas above); these two syntaxes
        (filesystems__fslist.0 or filesystems__list[0]) are equivalent. -#}
