@@ -16,7 +16,7 @@
 #   leave rootfs record (/) untouched)
 # - The third regexp matches things like /dev/VG/LV (with no dash (-) into
 #   VG and LV names), that should result in /dev/mapper/VG-LV
-# - The fourth is to remove trailing slashes (as usual)
+# - The fourth is to remove trailing spaces (as usual)
 #
 - name: "canonicalize paths in /etc/fstab to avoid duplicates"
   replace:
@@ -31,6 +31,7 @@
     - { regexp: '[ \t]+$', replace: '' }
   loop_control:
     loop_var: fstab_item
+  diff: true
   # By the way, the main reason we notify this handler is not to verify the
   # result of this task, but because we have fixed a non-standard syntax,
   # we make assumption that other bad things may be found in the file.
