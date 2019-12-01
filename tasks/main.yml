@@ -85,9 +85,9 @@
         ]
       loop_control:
         loop_var: __fs__dictlist__
-        label: {
-          "device": "{{ __fs__dictlist__.0.device }}",
-          "path": "{{ __fs__dictlist__.0.path }}" }
+        label:
+          device: "{{ __fs__dictlist__.0.device }}"
+          path: "{{ __fs__dictlist__.0.path }}"
 
 
     ############################################################################

@@ -69,11 +69,10 @@
     loop_var: _fs_item
     # As the filesystems__fslist dictionnaries support a lot of keys, we keep
     # only the most relevant against the name of the task.
-    label: {
-      "vg": "{{ _fs_item.vg }}",
-      "lv": "{{ _fs_item.lv }}",
-      "size": "{{ _fs_item.size }}"
-      }
+    label:
+      vg: "{{ _fs_item.vg }}"
+      lv: "{{ _fs_item.lv }}"
+      size: "{{ _fs_item.size }}"
   notify:
     - validate_fstab
 
@@ -91,10 +90,9 @@
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
     loop_var: _fs_item
-    label: {
-      "fstype": "{{ _fs_item.fstype }}",
-      "dev": "{{ _fs_item.device }}"
-      }
+    label:
+      fstype: "{{ _fs_item.fstype }}"
+      dev: "{{ _fs_item.device }}"
   notify:
     - validate_fstab
 
@@ -121,10 +119,9 @@
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
     loop_var: _fs_item
-    label: {
-      "src": "{{ _fs_item.device }}",
-      "path": "{{ _fs_item.path }}"
-      }
+    label:
+      src: "{{ _fs_item.device }}"
+      path: "{{ _fs_item.path }}"
   notify:
     - reload_systemd
     - validate_fstab

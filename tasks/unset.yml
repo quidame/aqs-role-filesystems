@@ -90,10 +90,9 @@
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
     loop_var: _fs_item
-    label: {
-      "vg": "{{ _fs_item.vg }}",
-      "lv": "{{ _fs_item.lv }}"
-      }
+    label:
+      vg: "{{ _fs_item.vg }}",
+      lv: "{{ _fs_item.lv }}"
   notify:
     - validate_fstab
 
