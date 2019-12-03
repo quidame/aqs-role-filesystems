@@ -26,9 +26,15 @@
 - name: "validate fstab entries"
   block:
 
+    - name: "(python2) preset fstab assertions"
+      set_fact:
+        fstab_assertions_for_python2: "{{ fstab_assertions }}"
+      when: ansible_playbook_python | basename is not match('python3')
+
+
     - name: "track duplicates, unpredictable names and bad fstypes in /etc/fstab"
       assert:
-        that: "{{ fstab_assertions }}"
+        that: "{{ fstab_assertions_for_python2 | d(fstab_assertions) }}"
 
 
     - name: "check that devices and mountpoints recorded in /etc/fstab exist"
