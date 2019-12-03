@@ -96,7 +96,7 @@
       # /dev/vg-00/lv-foo-bar  <==>  /dev/mapper/vg--00-lv--foo--bar
       - _fs_item.lv is defined or
         _fs_item.path | regex_replace('/+', '/') | regex_replace('/$', '') in ansible_mounts | json_query('[*].mount')
-      - _fs_item.lv is regex('^[^/]+$')
+      - _fs_item.lv is undefined or _fs_item.lv is regex('^[^/]+$')
 
       # The VG exists
       - _fs_item.vg is undefined or _fs_item.vg in ansible_lvm.vgs
