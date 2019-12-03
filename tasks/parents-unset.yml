@@ -27,15 +27,6 @@
 # Then stat will help to find which are removable.
 
 
-- name: "remove mountpoints"
-  file:
-    path: "{{ _fs_item }}"
-    state: absent
-  loop: "{{ __mountpoints__ }}"
-  loop_control:
-    loop_var: _fs_item
-
-
 - name: "stat parent directories that could be removed"
   stat:
     path: "{{ _fs_parents_item }}"
@@ -50,7 +41,7 @@
     __tempvar0__: |
       [
         {% for m in __mountpoints__ %}
-        {% for i in range(1, m.split('/') | length - 2) %}
+        {% for i in range(0, m.split('/') | length - 2) %}
         "{{ m | regex_replace('(/[^/]+){%s}$' % i, '') }}"
         {{ '' if loop.last else ',' }}{% endfor %}
         {{ '' if loop.last else ',' }}{% endfor %}
@@ -66,10 +57,11 @@
 # show them as skipped instead of unchanged, but this needs to know the result
 # in advance :)
 #
-- name: "remove ascending empty directories"
-  shell: |
-    mountpoint {{ _fs_parents_item }} ||
-    rmdir --verbose {{ _fs_parents_item }}
+- name: "remove ascending empty directories (OK means it was not removed because not empty)"
+  command: "rmdir --verbose '{{ _fs_parents_item }}'"
+  args:
+    removes: "{{ _fs_parents_item }}"
+    warn: false
   loop: "{{ __tempvar0__ }}"
   loop_control:
     loop_var: _fs_parents_item
@@ -79,7 +71,6 @@
     - _fs_parents_rmdir_.stderr is not search('not empty$')
   changed_when:
     - _fs_parents_rmdir_.rc == 0
-    - _fs_parents_rmdir_.stdout is not search('is a mountpoint$')
   environment:
     LANG: C
   vars:
@@ -88,7 +79,9 @@
     __tempvar0__: |
       [
         {% for s in _fs_parents_stat_.results if
-          s.stat.exists and s.stat.isdir and s._fs_parents_item is not match( '/[^/]*$' ) %}
+          s.stat.exists and s.stat.isdir and
+          s._fs_parents_item is not match( '/[^/]*$' ) and
+          s._fs_parents_item not in ansible_mounts|json_query('[*].mount') %}
         "{{ s._fs_parents_item }}"{{ '' if loop.last else ',' }}
         {% endfor %}
       ]
