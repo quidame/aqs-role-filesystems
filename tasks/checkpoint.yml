@@ -4,38 +4,282 @@
 
 
 # This is intended to prevent late errors by catching common cases of failure.
-# 1. OS compatibility
+# 1. OS and Ansible compatibility
 # 2. Mandatory parameters and their expected types, formats or values
 # 3. Internal variables that MUST NOT be overridden from commandline and MUST
 #    NOT conflict with inherited loop_var from another role, etc.
+# 4. System consistency regarding LV/FS and mountpoints and reachability of
+#    the requested state (to prevent data loss on another)
+
+
+################################################################################
 #
-- name: "check point : role prerequisites and requirements"
+- name: "validate compatibility with OS version and Ansible version"
   assert:
-    # See in vars/main.yml for details about assertions (based on the following
-    # ad hoc tasks vars)
-    that: "{{ filesystems__role_assertions }}"
-  vars:
-    # RATIONALE:
-    # When a mounted LV is renamed (with lvrename or dmsetup), system
-    # commands other than those related to device-mapper are out-of-sync,
-    # as long as the LV is not unmounted. Especially 'df' and 'findmnt',
-    # as well as 'mount', still display the old name of the LV. But these
-    # old good 'blkid' and 'lsblk' work fine. In the same way, gathered
-    # facts are more ore less reliable, as they are based on the same
-    # system tools. And unfortunately, ansible_mounts is not the most
-    # reliable of them. The following piece of code ensures devices in
-    # ansible_mounts exist in ansible_lvm or ansible_devices, etc.
-    filesystems__out_of_sync: "{{ (ansible_mounts
-      | json_query('[*].device')
-      | map('regex_search', '^/dev/mapper/.*')
-      | select('string')
-      | map('basename')
-      | list)
-      | difference(ansible_devices
-      | dict2items
-      | json_query('[*].value.links.ids')
-      | flatten
-      | map('regex_search', 'dm-name-.*')
-      | select('string')
-      | map('regex_replace', 'dm-name-', '')
-      | list) }}"
+    that:
+      - ( ansible_os_family in ['Debian'] and ansible_distribution_version is version('9.0', '>=') ) or
+        ( ansible_os_family in ['RedHat'] and ansible_distribution_version is version('7.0', '>=') )
+      - ansible_version.full is version('2.7', '>=')
+
+
+################################################################################
+#
+- name: "validate role's variables"
+  assert:
+    that:
+      # Check value (keyword) of role variables controlling its behaviour
+      - filesystems__action is defined
+      - filesystems__action in ['setup', 'unset', 'umount']
+      - filesystems__behaviour is defined
+      - filesystems__behaviour in ['serial', 'sequential']
+
+      # Check type of mandatory variables filled by user
+      - "filesystems__fslist | type_debug == 'list'"
+      - "filesystems__parents | type_debug == 'dict'"
+
+      # Some variables are set and used internally and MUST NOT be overridden
+      # from commmandline. Also note that by checking they are undefined, we
+      # assume that they're left undefined after the role play, otherwise the
+      # role could not be played twice or more in the same playbook. So, the
+      # following variables must not be set in set_fact nor in register.
+
+      # 1. Variable set either in task vars or in loop_var, depending on the
+      #    filesystems__behaviour value.
+      - __fs__dictlist__ is undefined
+
+      # 2. Variables set in task vars
+      - filesystems__fslist_preprocess_0 is undefined
+      - filesystems__fslist_preprocess_1 is undefined
+      - filesystems__fslist_preprocess_2 is undefined
+      - filesystems__fslist_preprocess_3 is undefined
+      - filesystems__fslist_preprocess_4 is undefined
+      - filesystems__fslist_preprocessed is undefined
+      - __tempvar0__ is undefined
+      - __tempvar1__ is undefined
+      - __tempvar2__ is undefined
+      - __mountpoints__ is undefined
+      - __fslist_setup__ is undefined
+      - __fslist_unset__ is undefined
+      - __fslist_order__ is undefined
+      - fstab_dicts is undefined
+      - fstab_devicelinks is undefined
+      - fstab_filesystems is undefined
+      - fstab_mountpoints is undefined
+
+      # 3. Variables set in loop_var
+      - _fs_item is undefined
+      - _fs_parents_item is undefined
+      - _fs_rename_item is undefined
+      - fstab_item is undefined
+
+
+################################################################################
+#
+- name: "validate filesystems__fslist dictionary keys (types, formats, values)"
+  assert:
+    that:
+      # Check mandatory variables and their format/type for all dicts of the
+      # list.
+      - "_fs_item | type_debug == 'dict'"
+
+      # No first level directory, supports trailing / or consecutive /, since
+      # this will be normalized before doing anything - except overwrite the
+      # file /etc/fstab, that will be done first for the same reason
+      - _fs_item.path is defined
+      - _fs_item.path is regex('^(/+[^/]+){2,}/?$')
+      - _fs_item.path is not regex('/\.\.?/')
+
+      # This is the LV name, not the path of the device (nor a symlink to
+      # it). We accept everything is supported by LVM. Dashes (-), that need
+      # to be translated to double-dashes (--) to match the device-mapper
+      # naming format, are supported too, as in (with lv='lv-foo-bar')
+      # /dev/vg-00/lv-foo-bar  <==>  /dev/mapper/vg--00-lv--foo--bar
+      - _fs_item.lv is defined or
+        _fs_item.path | regex_replace('/+', '/') | regex_replace('/$', '') in ansible_mounts | json_query('[*].mount')
+      - _fs_item.lv is regex('^[^/]+$')
+
+      # The VG exists
+      - _fs_item.vg is undefined or _fs_item.vg in ansible_lvm.vgs
+      - _fs_item.vg is defined or filesystems__default_vg in ansible_lvm.vgs
+
+      # The filesystem type, the volume size or the mount options don't
+      # matter when removing all this. So it could be nice to perform a
+      # triage here.
+      # Accepted size formats:
+      # - Amounts are integers
+      # - Absolute units are k, m, g and t, case insensitive:
+      #   1k = 1K = 1024 bytes (B)
+      #   1m = 1M = 1024K
+      #   ...
+      # - Percent units are relative to VG size (%VG) and VG free size
+      #   (%FREE).
+      # - With percent units, amounts are in the range 1-100.
+      # - All above formats can be prefixed by either +, - or nothing.
+      #
+      - _fs_item.size is undefined or
+        _fs_item.size is regex('^[+-]?([1-9][0-9]*[BkKmMgGtT]|([1-9][0-9]?|100)%(VG|FREE|PVS))$')
+      - _fs_item.size is defined or
+        filesystems__default_size is regex('^[+-]?([1-9][0-9]*[BkKmMgGtT]|([1-9][0-9]?|100)%(VG|FREE|PVS))$')
+
+      - _fs_item.fstype is undefined or _fs_item.fstype in ['ext4', 'xfs']
+      - _fs_item.fstype is defined or filesystems__default_fstype in ['ext4', 'xfs']
+
+      # XFS filsystem type is not shrinkable
+      - _fs_item.fstype | d(filesystems__default_fstype) != 'xfs' or
+        _fs_item.size | d(filesystems__default_size) is not match('-')
+
+      # Exhaustivity is not a goal on its own. This is just a kind of example
+      # of checking optional parameters. Think if you really want to check
+      # permission values in octal as well as litteral formats for every case
+      # encountered...
+      - _fs_item.passno is undefined or _fs_item.passno in [0, 2, '0', '2']
+      - _fs_item.passno is defined or filesystems__default_passno | d(0) in [0, 2, '0', '2']
+
+  loop: "{{ filesystems__fslist }}"
+  loop_control:
+    loop_var: _fs_item
+
+
+################################################################################
+#
+- name: "validate system consistency (all devices in ansible_mounts exist in ansible_devices)"
+  assert:
+    that:
+      # something_ansible_mounts | difference(something_ansible_devices) == []
+      # That is what happens when a LV is renamed but not remounted... Say:
+      # - /dev/mapper/vg0-foobar is mounted on /srv/foo/bar
+      # - foobar is renamed foo: lvrename vg0/foobar foo
+      # - you know that now /dev/mapper/vg0-foo is mounted on /srv/foo/bar,
+      #   but...
+      # - df, findmnt, mount and /proc/mounts still show /dev/mapper/vg0-foobar
+      #   mounted on /srv/foo/bar, and /dev/mapper/vg0-foo is nowhere, but...
+      # - lsblk and blkid show /dev/mapper/vg0-foo mounted on /srv/foo/bar
+      # So ?
+      # In such cases, ansible_mounts is out-of-sync and ansible_devices and
+      # ansible_lvm are up-to-date. That's just a matter of comparison between
+      # complex objects.
+      - ansible_mounts
+        | json_query('[*].device')
+        | select('search', '^/dev/mapper/.*')
+        | map('basename')
+        | list
+        | difference(
+          ansible_devices
+          | dict2items
+          | json_query('[*].value.links.ids')
+          | flatten
+          | select('search', 'dm-name-.*')
+          | map('regex_replace', 'dm-name-', '')
+          | list
+          ) == []
+    fail_msg: "There is a Logical Volume in ansible_mounts that is unknown in
+      ansible_devices. That means some system tools are out-of-sync. This may
+      be due to a manual renaming of the LV without remounting it after.  You
+      should rename it or remount it, and ensure /etc/fstab is up-to-date.
+      Pease clean the mess before moving forward."
+
+
+################################################################################
+#
+- name: "validate requested state is reachable regarding possible troubles with nested mounts"
+  assert:
+    that:
+      # There is probably no chance to cleanly setup a new mountpoint if an
+      # existing one would be a subdirectory of the new one, i.e. if nested
+      # mounts are not set in the proper order.
+      # For example:
+      #   /var/projects/apa_nna/apache_2.4 is an active mountpoint
+      #   /var/projects is to be set as a mountpoint
+      # In this example, the mount on /var/projects will hide the one set on
+      # /var/projects/apa_nna/apache_2.4, and this is not what we want !!!
+      # This is aware of that and takes care to:
+      #   - not fail if the wanted mount is active and action=setup
+      #   - not fail if the mount is not set and action=unset
+      #   - not fail if the mount is set, action=unset and submounts are listed
+      #     to be unset too
+      #
+      - (
+          ansible_mounts
+          | json_query('[*].mount')
+          | select('search', '^%s/.*' % (
+            _fs_item.path
+            | regex_replace('/+', '/')
+            | regex_replace('/$', '')))
+          | list == []
+        ) or (
+          filesystems__action in ['setup'] and
+          _fs_item.path
+          | regex_replace('/+', '/')
+          | regex_replace('/$', '') in
+          ansible_mounts
+          | json_query('[*].mount')
+        ) or (
+          filesystems__action in ['unset','umount'] and
+          _fs_item.path
+          | regex_replace('/+', '/')
+          | regex_replace('/$', '') not in
+          ansible_mounts
+          | json_query('[*].mount')
+        ) or (
+          filesystems__action in ['unset','umount'] and (
+            ansible_mounts
+            | json_query('[*].mount')
+            | select('search', '^%s/.*' % (
+              _fs_item.path
+              | regex_replace('/+', '/')
+              | regex_replace('/$', '')))
+            | list
+            | difference(
+              filesystems__fslist
+              | json_query('[*].path')
+              | map('regex_replace', '/+', '/')
+              | map('regex_replace', '/$', '')
+              | select('search', '^%s/.*' % (
+                _fs_item.path
+                | regex_replace('/+', '/')
+                | regex_replace('/$', '')))
+              | list
+            )
+          ) == []
+        )
+      #
+      # Or in other words (and other context, but just to make the code above
+      # more readable):
+      #
+      #canonic_path: "{{ _fs_item.path
+      #  | regex_replace('/+', '/')
+      #  | regex_replace('/$', '') }}"
+      #ismounted: "{{ canonic_path in ansible_mounts | json_query('[*].mount') }}'
+      #submounts: "{{ ansible_mounts
+      #  | json_query('[*].mount')
+      #  | select('search', '^%s/.*' % canonic_path)
+      #  | list }}"
+      #sub_paths: "{{ filesystems__fslist
+      #  | json_query('[*].path')
+      #  | map('regex_replace', '/+', '/')
+      #  | map('regex_replace', '/$', '')
+      #  | select('search', '^%s/.*' % canonic_path)
+      #  | list %}
+      #
+      #"( {{ submounts }} == [] ) or \
+      # ( filesystems__action in ['setup'] and ismounted ) or \
+      # ( filesystems__action in ['unset', 'umount'] and not ismounted ) or \
+      # ( filesystems__action in ['unset', 'umount'] and submounts | difference(sub_paths) == [] ) or \
+      #
+    fail_msg: "You attempt to {{ filesystems__action }} a mountpoint on \
+      {{ _fs_item.path }}, but it seems to be another active mountpoint \
+      onto a subdirectory, that \
+      {{ 'would be hidden by the new one. Nobody wants that.' if filesystems__action == 'setup'
+      else 'will block the unmount operation.' }} Please unmount {{ ansible_mounts
+      | json_query('[*].mount')
+      | select('search', '^%s/.*' % (
+        _fs_item.path
+        | regex_replace('/+', '/')
+        | regex_replace('/$', '')))
+      | list
+      | join(', ') }} before moving forward."
+  loop: "{{ filesystems__fslist }}"
+  loop_control:
+    loop_var: _fs_item
+    label:
+      path: "{{ _fs_item.path }}"
