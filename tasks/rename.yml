@@ -227,7 +227,7 @@
     loop_var: _fs_item
     label: "{{ _fs_item.target }}"
   when:
-    - filesystems__action in ['setup']
+    - filesystems__state in ['present']
     - _fs_item.fstype in ['xfs']
   notify:
     - validate_fstab

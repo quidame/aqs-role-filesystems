@@ -63,7 +63,7 @@
 # there is no renaming between), and serial mode is faster. We play them in a
 # block so we can share variables.
 #
-- name: "{{ filesystems__action }} filesystems"
+- name: "manage filesystems"
   block:
 
     ############################################################################
@@ -74,9 +74,9 @@
     #   - 2nd filesystem: all tasks
     #   For example: fully setup a filesystem, then fully setup the next one...
     #
-    - name: "{{ filesystems__action }} filesystems in sequential mode"
+    - name: "{{ filesystems__task_verb }} filesystems in sequential mode"
       when: "filesystems__behaviour == 'sequential'"
-      include_tasks: "{{ filesystems__action }}.yml"
+      include_tasks: "state_{{ filesystems__state }}.yml"
       loop: |
         [
           {% for d in __fslist_order__ %}
@@ -98,9 +98,9 @@
     #   - 2nd task: all filesystems
     #   For example: create all LV, then create all FS, then mount all FS
     #
-    - name: "{{ filesystems__action }} filesystems in serial mode"
+    - name: "{{ filesystems__task_verb }} filesystems in serial mode"
       when: "filesystems__behaviour == 'serial'"
-      include_tasks: "{{ filesystems__action }}.yml"
+      include_tasks: "state_{{ filesystems__state }}.yml"
       vars:
         __fs__dictlist__: "{{ __fslist_order__ }}"
 
@@ -108,6 +108,11 @@
   # Block vars are set for all tasks of the block, and are available for the
   # more specific tasks vars.
   vars:
+    filesystems__task_verb: "{{
+      'setup' if filesystems__state == 'present' else
+      'unset' if filesystems__state == 'absent' else
+      'unmount' }}"
+
     # Get the list of LVs with useful fields from the command above
     filesystems__lvs: "{{ filesystems__lvs_command.stdout | from_json | json_query('report[*].lv') | flatten }}"
 
@@ -141,12 +146,12 @@
           "vg": "%s" % vg
           } %}
 
-        {% if filesystems__action in ['setup'] %}
+        {% if filesystems__state in ['present'] %}
           {% set D = D | combine({
             "size": "%s" % (d.size | d(filesystems__default_size)),
             "force_mkfs": d.force_mkfs | d(d.force | d(filesystems__default_force_mkfs)) | bool
             }) %}
-        {% elif filesystems__action in ['unset', 'umount'] %}
+        {% elif filesystems__state in ['absent', 'unmounted'] %}
           {% set D = D | combine({
             "force_kill": d.force_kill | d(d.force | d(filesystems__default_force_kill)) | bool,
             "force_wipe": d.force_wipe | d(d.force | d(filesystems__default_force_wipe)) | bool
@@ -190,7 +195,7 @@
         {% for d in filesystems__fslist_preprocess_1 %}
         {% set D = {} %}
 
-        {% if filesystems__action in ['setup'] %}
+        {% if filesystems__state in ['present'] %}
 
           {#
             # 1. The target LV already exists. Get its current size (in bytes)
@@ -230,7 +235,7 @@
         {% for d in filesystems__fslist_preprocess_2 %}
         {% set D = {} %}
 
-        {% if filesystems__action in ['setup'] %}
+        {% if filesystems__state in ['present'] %}
 
           {#
             # WORKAROUND
@@ -284,7 +289,7 @@
         {% for d in filesystems__fslist_preprocess_3 %}
         {% set D = {} %}
 
-        {% if filesystems__action in ['setup'] %}
+        {% if filesystems__state in ['present'] %}
 
           {#
             # This part is to ease management of resizing. There are currently
@@ -378,4 +383,4 @@
     # are done in the right order and unmounted in reverse order.
     __fslist_setup__: "{{ filesystems__fslist_preprocessed | sort(attribute='path') }}"
     __fslist_unset__: "{{ filesystems__fslist_preprocessed | sort(attribute='path') | reverse | list }}"
-    __fslist_order__: "{{ __fslist_setup__ if filesystems__action in ['setup'] else __fslist_unset__ }}"
+    __fslist_order__: "{{ __fslist_setup__ if filesystems__state in ['present'] else __fslist_unset__ }}"

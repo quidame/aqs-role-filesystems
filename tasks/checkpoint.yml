@@ -28,8 +28,8 @@
   assert:
     that:
       # Check value (keyword) of role variables controlling its behaviour
-      - filesystems__action is defined
-      - filesystems__action in ['setup', 'unset', 'umount']
+      - filesystems__state is defined
+      - filesystems__state in ['present', 'absent', 'unmounted']
       - filesystems__behaviour is defined
       - filesystems__behaviour in ['serial', 'sequential']
 
@@ -193,10 +193,10 @@
       # In this example, the mount on /var/projects will hide the one set on
       # /var/projects/apa_nna/apache_2.4, and this is not what we want !!!
       # This is aware of that and takes care to:
-      #   - not fail if the wanted mount is active and action=setup
-      #   - not fail if the mount is not set and action=unset
-      #   - not fail if the mount is set, action=unset and submounts are listed
-      #     to be unset too
+      #   - not fail if the wanted mount is active and role's state=present
+      #   - not fail if the mount is not set and role's state=absent
+      #   - not fail if the mount is set, role's state=absent and submounts
+      #     are listed to be unset too
       #
       - (
           ansible_mounts
@@ -207,21 +207,21 @@
             | regex_replace('/$', '')))
           | list == []
         ) or (
-          filesystems__action in ['setup'] and
+          filesystems__state in ['present'] and
           _fs_item.path
           | regex_replace('/+', '/')
           | regex_replace('/$', '') in
           ansible_mounts
           | json_query('[*].mount')
         ) or (
-          filesystems__action in ['unset','umount'] and
+          filesystems__state in ['absent','unmounted'] and
           _fs_item.path
           | regex_replace('/+', '/')
           | regex_replace('/$', '') not in
           ansible_mounts
           | json_query('[*].mount')
         ) or (
-          filesystems__action in ['unset','umount'] and (
+          filesystems__state in ['absent','unmounted'] and (
             ansible_mounts
             | json_query('[*].mount')
             | select('search', '^%s/.*' % (
@@ -262,22 +262,16 @@
       #  | list %}
       #
       #"( {{ submounts }} == [] ) or \
-      # ( filesystems__action in ['setup'] and ismounted ) or \
-      # ( filesystems__action in ['unset', 'umount'] and not ismounted ) or \
-      # ( filesystems__action in ['unset', 'umount'] and submounts | difference(sub_paths) == [] ) or \
+      # ( filesystems__state in ['present'] and ismounted ) or \
+      # ( filesystems__state in ['absent', 'unmounted'] and not ismounted ) or \
+      # ( filesystems__state in ['absent', 'unmounted'] and submounts | difference(sub_paths) == [] ) or \
       #
-    fail_msg: "You attempt to {{ filesystems__action }} a mountpoint on \
-      {{ _fs_item.path }}, but it seems to be another active mountpoint \
-      onto a subdirectory, that \
-      {{ 'would be hidden by the new one. Nobody wants that.' if filesystems__action == 'setup'
-      else 'will block the unmount operation.' }} Please unmount {{ ansible_mounts
-      | json_query('[*].mount')
-      | select('search', '^%s/.*' % (
-        _fs_item.path
-        | regex_replace('/+', '/')
-        | regex_replace('/$', '')))
-      | list
-      | join(', ') }} before moving forward."
+    fail_msg: "You attempt to {{ 'enable' if filesystems__state == 'present' else 'disable' }} a mountpoint \
+      on {{ _fs_item.path }}, but it seems to be another active mountpoint onto a subdirectory, that \
+      {{ 'would be hidden by the new one. Nobody wants that' if filesystems__state == 'present' else
+      'will block the unmount operation' }}. Please unmount {{ ansible_mounts | json_query('[*].mount')
+      | select('search', '^%s/.*' % (_fs_item.path | regex_replace('/+', '/') | regex_replace('/$', '')))
+      | list | join(', ') }} before moving forward."
   loop: "{{ filesystems__fslist }}"
   loop_control:
     loop_var: _fs_item

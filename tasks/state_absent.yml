@@ -1,6 +1,6 @@
 ---
 # role: filesystems
-# file: tasks/unset.yml
+# file: tasks/state_absent.yml
 #
 # Tasks to unset filesystems as well as their underlying Logical Volumes.
 
@@ -23,7 +23,7 @@
     - filesystems__update_paths | bool
 
 
-- import_tasks: umount.yml
+- import_tasks: state_unmounted.yml
 
 - name: "remove records in /etc/fstab"
   mount:

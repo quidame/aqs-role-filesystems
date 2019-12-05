@@ -16,14 +16,12 @@
 
 
 ################################################################################
-## filesystems__action
+## filesystems__state
 #
-# Define the main behaviour of the role. Valid values are 'setup' (the default)
-# and 'unset'.  Depending of the role scope, this may be understood as install/
-# uninstall, configure/unconfigure, start/stop, present/absent, create/destroy,
-# add/remove, and so on.
+# Define the main behaviour of the role. Valid values are 'present', 'absent'
+# and 'unmounted'.
 #
-filesystems__action: "setup"
+#filesystems__state: "present"
 
 
 ################################################################################

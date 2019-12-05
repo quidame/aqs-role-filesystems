@@ -1,6 +1,6 @@
 ---
 # role: filesystems
-# file: tasks/umount.yml
+# file: tasks/state_unmounted.yml
 
 
 # Some services may still write or read into files, or a user may stay
