@@ -101,9 +101,9 @@
           "dump":    "{{ fs.split(' ').4 }}",
           "passno":  "{{ fs.split(' ').5 }}",
           "link": {% if fs.split( ' ' ).0 is match('UUID=') %}
-            "{{ '/dev/disk/by-uuid/%s' % fs.split(' ').0 | replace('UUID=', '') }}"
+            "{{ fs.split(' ').0 | replace('UUID=', '/dev/disk/by-uuid/') }}"
             {% elif fs.split( ' ' ).0 is match('LABEL=') %}
-            "{{ '/dev/disk/by-label/%s' % fs.split(' ').0 | replace('LABEL=', '') }}"
+            "{{ fs.split(' ').0 | replace('LABEL=', '/dev/disk/by-label/') }}"
             {% else %}
             "{{ fs.split(' ').0 }}"
             {% endif %}
