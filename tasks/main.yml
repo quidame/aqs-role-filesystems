@@ -151,10 +151,14 @@
             "size": "%s" % (d.size | d(filesystems__default_size)),
             "force_mkfs": d.force_mkfs | d(d.force | d(filesystems__default_force_mkfs)) | bool
             }) %}
-        {% elif filesystems__state in ['absent', 'unmounted'] %}
+        {% elif filesystems__state in ['absent'] %}
           {% set D = D | combine({
             "force_kill": d.force_kill | d(d.force | d(filesystems__default_force_kill)) | bool,
             "force_wipe": d.force_wipe | d(d.force | d(filesystems__default_force_wipe)) | bool
+            }) %}
+        {% elif filesystems__state in ['unmounted'] %}
+          {% set D = D | combine({
+            "force_kill": d.force_kill | d(d.force | d(filesystems__default_force_kill)) | bool
             }) %}
         {% endif %}
 
