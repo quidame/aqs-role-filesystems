@@ -152,7 +152,8 @@
         {% endfor %}
       ]
 
-- import_tasks: parents-setup.yml
+- name: "include tasks to create parent directories with non-default properties"
+  include_tasks: parents-setup.yml
   vars:
     __mountpoints__: |
       [
@@ -161,6 +162,7 @@
         {% endfor %}
       ]
   when:
+    - filesystems__state in ['present']
     - filesystems__parents != {}
 
 
