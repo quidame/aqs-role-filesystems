@@ -54,7 +54,6 @@
       # Let a chance to use this role to unmount the fs that hides others
       - ansible_mounts | json_query('[?!block_size].mount') == [] or
         filesystems__state|d() in ['absent', 'unmounted']
-        or true
 
     fail_msg: "There is a mess in the filesystems stack.
       {%- if lv_from_ansible_mounts | difference(lv_from_ansible_devices) != [] %}
@@ -253,12 +252,6 @@
           #     hidden by the mount to unset. Yes.
           #
           - fs_hidden_by == []
-
-          #- ( fs_submounts | warning ) or True
-          #- ( fs_subnested | warning ) or True
-          #- ( fs_subhidden | warning ) or True
-          #- ( fs_subwanted | warning ) or True
-          #- ( fs_hidden_by | warning ) or True
 
           - ( fs_submounts == [] ) or
             ( filesystems__state in ['present'] and fs_ismounted | bool and fs_subhidden == [] ) or
