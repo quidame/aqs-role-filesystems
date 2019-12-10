@@ -50,19 +50,30 @@
       # complex objects. They're defined in task vars for better readability
       # of the assertion.
       - lv_from_ansible_mounts | difference(lv_from_ansible_devices) == []
-      - ansible_mounts | json_query('[?!block_size].mount') == [] or
-        "Mountpoint(s) {{ ansible_mounts | json_query('[?!block_size].mount')
-        | join(' and ') }} is/are currently mounted but hidden by another mount.
-        You have been warned !!!" | warning
 
-    fail_msg: "There is at least one Logical Volume in ansible_mounts that is
-      unknown to ansible_devices: {{ lv_from_ansible_mounts
-        | difference(lv_from_ansible_devices) | join(' and ') }}.
-      That means some system tools are out-of-sync. This may be due to a manual
-      renaming of an LV without remounting it after.  You should rename it back
-      or remount it, and ensure /etc/fstab is up-to-date. System tools as
-      findmnt(8), lsblk(8) and blkid(8) and their manual pages may be of great
-      help. Please cleanup the mess before moving forward."
+      # Let a chance to use this role to unmount the fs that hides others
+      - ansible_mounts | json_query('[?!block_size].mount') == [] or
+        filesystems__state|d() in ['absent', 'unmounted']
+        or true
+
+    fail_msg: "There is a mess in the filesystems stack.
+      {%- if lv_from_ansible_mounts | difference(lv_from_ansible_devices) != [] %}
+      LV {{ lv_from_ansible_mounts | difference(lv_from_ansible_devices) | join(' and ') }}
+      still exist in `ansible_mounts` while not in `ansible_devices`. That means
+      some system tools are out-of-sync. This may be due to a manual renaming of
+      an LV without remounting it after. You should rename it back or remount it,
+      and ensure /etc/fstab is up-to-date. System tools as findmnt(8), lsblk(8)
+      and blkid(8) and their manual pages, in addition to LVM tools, may be of
+      great help to diagnose the issue.
+
+      {%- elif ansible_mounts | json_query('[?!block_size].mount') != [] %}
+      {{ ansible_mounts | json_query('[?!block_size].mount') | join(' and ') }}
+      {{ 'are' if ansible_mounts | json_query('[?!block_size].mount') | length > 1 else 'is' }}
+      currently mounted but hidden by another mount. It means that nothing can
+      be done or undone on the hidden filesystem(s) while the overmount is still
+      active. You should unmount it prior to attempt to build other things on it.
+      {%- endif %}
+      Please cleanup the mess before moving forward."
 
   vars:
     lv_from_ansible_mounts: "{{ ansible_mounts
@@ -123,19 +134,15 @@
       - fstab_devicelinks is undefined
       - fstab_filesystems is undefined
       - fstab_mountpoints is undefined
-      - mounts_ansible_mounts is undefined
-      - hidden_ansible_mounts is undefined
+      - actual_ansible_mounts is undefined
       - wanted_ansible_mounts is undefined
-      - hiding_ansible_mounts is undefined
-      - nested_ansible_mounts is undefined
-      - parent_ansible_mounts is undefined
       - fs_canonical is undefined
       - fs_ismounted is undefined
       - fs_submounts is undefined
       - fs_subnested is undefined
       - fs_subhidden is undefined
       - fs_subwanted is undefined
-      - fs_hiddingme is undefined
+      - fs_hidden_by is undefined
 
       # 3. Variables set in loop_var
       - _fs_item is undefined
@@ -161,14 +168,6 @@
           - _fs_item.path is defined
           - _fs_item.path is regex('^(/+[^/ ]+){2,}/?$')
           - _fs_item.path is not regex('/\.\.?/')
-          - _fs_item.path is regex('^(/[^/ ]+){2,}$') or
-            "Trailing slashes in directory names are bad practices. They make
-            things complicated when needing to compare such strings with system
-            tools output (findmnt), kernel files content (/proc/mounts) and so
-            ansible facts, or when blindly concatenating variables with a slash
-            between them - as expected - doubling slashes in the middle of the
-            path. Fantaisist paths are still supported since the role will
-            reformat them" | deprecation_warning
 
           # This is the LV name, not the path of the device (nor a symlink to
           # it). We accept everything is supported by LVM. Dashes (-), that need
@@ -253,7 +252,13 @@
           #     are listed to be unset too, unless they're already mounted and
           #     hidden by the mount to unset. Yes.
           #
-          - "'{{ fs_canonical }}' not in hidden_ansible_mounts"
+          - fs_hidden_by == []
+
+          #- ( fs_submounts | warning ) or True
+          #- ( fs_subnested | warning ) or True
+          #- ( fs_subhidden | warning ) or True
+          #- ( fs_subwanted | warning ) or True
+          #- ( fs_hidden_by | warning ) or True
 
           - ( fs_submounts == [] ) or
             ( filesystems__state in ['present'] and fs_ismounted | bool and fs_subhidden == [] ) or
@@ -267,34 +272,38 @@
           a mountpoint on {{ fs_canonical }}, but it seems there is some
           trouble with that.
 
-          {%- if fs_canonical in hidden_ansible_mounts %}
+          {%- if fs_hidden_by != [] %}
           {{ fs_canonical }} is currently mounted but hidden by a mount over
-          {{ fs_hiddingme }}. Absolutely nothing can be done or undone with
-          {{ fs_canonical }} while {{ fs_hiddingme }} is still mounted. Please
-          unmount it before moving forward.
+          {{ fs_hidden_by | join(' and ') }}. Absolutely nothing can be done or
+          undone with {{ fs_canonical }} while its overmount is still active.
+          Please unmount {{ fs_hidden_by | join(' and ') }} before moving
+          forward.
 
           {%- elif filesystems__state in ['present'] and fs_ismounted | bool %}
-          {{ fs_subhidden | join(' and ') }} is currently hidden by
-          {{ fs_canonical }}. Please unmount {{ fs_canonical }} before
-          moving forward.
+          {{ fs_subhidden | join(' and ') }}
+          {{ 'are' if fs_subhidden | length > 1 else 'is' }} currently mounted
+          but hidden by the mount over {{ fs_canonical }}. Please unmount
+          {{ fs_canonical }} before moving forward.
 
           {%- elif filesystems__state in ['present'] %}
           Mounting a filesystem on {{ fs_canonical }} would hide currently
-          active mount {{ fs_submounts | join(' and ') }}. Please unmount
-          {{ fs_submounts | join(' and ') }} before moving forward.
+          active mount {{ fs_submounts | join(' and ') }}. Nobody wants this.
+          Please unmount {{ fs_submounts | join(' and ') }} before moving
+          forward.
 
           {%- else %}
           {%- if fs_subnested | difference(fs_subwanted) != [] %}
           {{ fs_subnested | difference(fs_subwanted) | join(' and ') }} is a
           nested mountpoint that needs to be unmounted either before or in
-          the same move than {{ fs_canonical }}.
+          the same move than {{ fs_canonical }}. Please unmount
+          {{ fs_subnested | join(' and ') }} before moving forward.
           {%- endif %}
           {%- if fs_subhidden | difference(fs_subwanted) != fs_subhidden %}
           {{ fs_subhidden | intersect(fs_subwanted) | join(' and ') }} is
           currently mounted and hidden by the mount on {{ fs_canonical }},
-          and can't be disabled in the same move.
+          and can't be disabled in the same move. Please unmount
+          {{ fs_canonical }} before moving forward.
           {%- endif %}
-          Please unmount {{ fs_canonical }} before moving forward.
           {%- endif %}"
 
       loop: "{{ filesystems__fslist }}"
@@ -304,40 +313,40 @@
           path: "{{ _fs_item.path }}"
 
   vars:
-    mounts_ansible_mounts: "{{ ansible_mounts | json_query('[*].mount') }}"
-    hidden_ansible_mounts: "{{ ansible_mounts | json_query('[?!block_size].mount') }}"
-    wanted_ansible_mounts: "{{ filesystems__fslist | json_query('[*].path')
-      | map('regex_replace', '/+', '/') | map('regex_replace', '/$', '') | list }}"
-    hiding_ansible_mounts: |
-      [
-        {% for x in ansible_mounts %}{% set i = loop.index %}{% if x.block_size is undefined %}
-        {% for m in ansible_mounts[i:] | json_query('[*].mount') if x.mount is match('%s/' % m) %}
-        '{{ m }}'{{ '' if loop.last else ',' }}{% endfor %}{{ '' if loop.last else ',' }}{% endif %}{% endfor %}
-      ]
-    nested_ansible_mounts: |
-      [
-        {% for x in ansible_mounts %}{% set i = loop.index %}{% if x.block_size is defined %}
-        {% for m in ansible_mounts[i:] | json_query('[*].mount') if m is match('%s/' % x.mount) %}
-        '{{ m }}'{{ '' if loop.last else ',' }}{% endfor %}{{ '' if loop.last else ',' }}{% endif %}{% endfor %}
-      ]
-    parent_ansible_mounts: |
-      [
-        {% for x in ansible_mounts %}{% set i = loop.index %}{% if x.block_size is defined %}
-        {% for m in ansible_mounts[:i] | json_query('[*].mount') if x.mount is match('%s/' % m) %}
-        '{{ m }}'{{ '' if loop.last else ',' }}{% endfor %}{{ '' if loop.last else ',' }}{% endif %}{% endfor %}
-      ]
+    actual_ansible_mounts: |
+      [{% for x in ansible_mounts %}"{{ x.mount }}",{% endfor %} ]
+    wanted_ansible_mounts: |
+      [ {% for x in filesystems__fslist %}"{{ x.path | regex_replace('/+', '/') | regex_replace('/$', '') }}",{% endfor %} ]
 
     # Canonical path of the mountpoint
     fs_canonical: "{{ _fs_item.path | regex_replace('/+', '/') | regex_replace('/$', '') }}"
     # If it is mounted or not
-    fs_ismounted: "{{ fs_canonical in mounts_ansible_mounts }}"
-    # Current submounts (nested + hidden) on the host
-    fs_submounts: "{{ mounts_ansible_mounts | select('search', '^%s/.*' % fs_canonical) | list }}"
-    # Current nested mounts on the host (submounts that are at the right place)
-    fs_subnested: "{{ nested_ansible_mounts | select('search', '^%s/.*' % fs_canonical) | list }}"
-    # Current hidden mounts on the host (submounts that are at the wrong place)
-    fs_subhidden: "{{ hidden_ansible_mounts | select('search', '^%s/.*' % fs_canonical) | list }}"
+    fs_ismounted: "{{ fs_canonical in actual_ansible_mounts }}"
     # The mounts wanted by the user (to be set or unset or unmounted)
     fs_subwanted: "{{ wanted_ansible_mounts | select('search', '^%s/.*' % fs_canonical) | list }}"
+    # Submounts (nested + hidden) of current FS
+    fs_submounts: "{{ actual_ansible_mounts | select('search', '^%s/.*' % fs_canonical) | list }}"
+
+    # Nested mounts (submounts that are at the right place) of current FS
+    fs_subnested: |
+      [
+        {% for x in ansible_mounts %}{% set i = loop.index - 1 %}{% if x.mount == fs_canonical %}
+        {% for m in ansible_mounts[i:] | json_query('[*].mount') if m is match('%s/' % x.mount) %}
+        "{{ m }}",{% endfor %}{% endif %}{% endfor %}
+      ]
+
+    # Hidden mounts (submounts that are at the wrong place) of current FS
+    fs_subhidden: |
+      [
+        {% for x in ansible_mounts %}{% set i = loop.index - 1 %}{% if x.mount == fs_canonical %}
+        {% for m in ansible_mounts[:i] | json_query('[*].mount') if m is match('%s/' % x.mount) %}
+        "{{ m }}",{% endfor %}{% endif %}{% endfor %}
+      ]
+
     # The parent mount that became an overmount and hides the current mount (hopefully none)
-    fs_hiddingme: "{{ hiding_ansible_mounts | unique | join(', ') }}"
+    fs_hidden_by: |
+      [
+        {% for x in ansible_mounts %}{% set i = loop.index - 1 %}{% if x.mount == fs_canonical %}
+        {% for m in ansible_mounts[i:] | json_query('[*].mount') if x.mount is match('%s/' % m) %}
+        "{{ m }}",{% endfor %}{% endif %}{% endfor %}
+      ]
