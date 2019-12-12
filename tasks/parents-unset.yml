@@ -29,10 +29,10 @@
 
 - name: "stat parent directories that could be removed"
   stat:
-    path: "{{ _fs_parents_item }}"
+    path: "{{ _fs_item }}"
   loop: "{{ __tempvar0__ | sort | unique | reverse | list }}"
   loop_control:
-    loop_var: _fs_parents_item
+    loop_var: _fs_item
   register: _fs_parents_stat_
   vars:
     # Get the complete list of all directories for each mountpoint, including
@@ -58,13 +58,13 @@
 # in advance :)
 #
 - name: "remove ascending empty directories (OK means it was not removed because not empty)"
-  command: "rmdir --verbose '{{ _fs_parents_item }}'"
+  command: "rmdir --verbose '{{ _fs_item }}'"
   args:
-    removes: "{{ _fs_parents_item }}"
+    removes: "{{ _fs_item }}"
     warn: false
   loop: "{{ __tempvar0__ }}"
   loop_control:
-    loop_var: _fs_parents_item
+    loop_var: _fs_item
   register: _fs_parents_rmdir_
   failed_when:
     - _fs_parents_rmdir_.rc != 0
@@ -80,9 +80,9 @@
       [
         {% for s in _fs_parents_stat_.results if
           s.stat.exists and s.stat.isdir and
-          s._fs_parents_item is not match( '/[^/]*$' ) and
-          s._fs_parents_item not in ansible_mounts|json_query('[*].mount') %}
-        "{{ s._fs_parents_item }}"{{ '' if loop.last else ',' }}
+          s._fs_item is not match( '/[^/]*$' ) and
+          s._fs_item not in ansible_mounts|json_query('[*].mount') %}
+        "{{ s._fs_item }}"{{ '' if loop.last else ',' }}
         {% endfor %}
       ]
   notify:

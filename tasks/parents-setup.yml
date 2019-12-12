@@ -39,10 +39,10 @@
 
 - name: "stat directories that could be created"
   stat:
-    path: "{{ _fs_parents_item }}"
+    path: "{{ _fs_item }}"
   loop: "{{ __tempvar1__ | sort | unique }}"
   loop_control:
-    loop_var: _fs_parents_item
+    loop_var: _fs_item
   register: _fs_parents_stat_
   vars:
     # List nested mountpoints, i.e. elements of the list that include another,
@@ -72,7 +72,7 @@
 
 - name: "create missing directories with non-default properties"
   file:
-    path: "{{ _fs_parents_item }}"
+    path: "{{ _fs_item }}"
     attr:    "{{ filesystems__parents.attr    | d(omit) }}"
     mode:    "{{ filesystems__parents.mode    | d(omit) }}"
     owner:   "{{ filesystems__parents.owner   | d(omit) }}"
@@ -84,11 +84,11 @@
     state: directory
   loop: "{{ __tempvar0__ }}"
   loop_control:
-    loop_var: _fs_parents_item
+    loop_var: _fs_item
   vars:
     __tempvar0__: |
       [
         {% for s in _fs_parents_stat_.results if not s.stat.exists %}
-        "{{ s._fs_parents_item }}"{{ '' if loop.last else ',' }}
+        "{{ s._fs_item }}"{{ '' if loop.last else ',' }}
         {% endfor %}
       ]
