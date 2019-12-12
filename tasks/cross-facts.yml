@@ -8,14 +8,6 @@
     var: __fs__dictlist__
 
 
-# We'll rely on ansible_mounts in the next task, so make it reliable (that's
-# mandatory in sequential mode, and highly recommended in serial mode).
-#
-- name: "regather fact 'ansible_mounts'"
-  setup:
-    filter: ansible_mounts
-
-
 # The only purpose of this file is to deduplicate code, as the built object is
 # needed in both create.yml and remove.yml. That said, the task itself is to
 # cross-compare facts and user variables and build a complex object describing
@@ -26,13 +18,11 @@
   set_fact:
     _fs_rename_: "{{ __tempvar2__ | sort(attribute='old.dir') | reverse | list }}"
   vars:
-    # Keep a small subset of ansible_mounts. Other keys are not relevant for
-    # our needs, and so filtered.
     __tempvar0__: |
       [
-        {% for m in ansible_mounts %}{
-          "dev": "{{ m.device }}",
-          "dir": "{{ m.mount }}",
+        {% for m in filesystems__lsblk if m.path is match('/dev/mapper/') %}{
+          "dev": "{{ m.path }}",
+          "dir": "{{ m.mountpoint }}",
           "fstype": "{{ m.fstype }}"
           }{{ '' if loop.last else ',' }}
         {% endfor %}
@@ -40,7 +30,7 @@
 
     __tempvar1__: |
       [
-        {% for m in __fs__dictlist__ %} {
+        {% for m in __fs__dictlist__ %}{
           "dev": "{{ m.device }}",
           "dir": "{{ m.path }}",
           "fstype": "{{ m.fstype }}",

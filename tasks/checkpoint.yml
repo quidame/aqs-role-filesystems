@@ -20,72 +20,6 @@
       - ( ansible_os_family in ['Debian'] and ansible_distribution_version is version('9.0', '>=') ) or
         ( ansible_os_family in ['RedHat'] and ansible_distribution_version is version('7.0', '>=') )
       - ansible_version.full is version('2.7', '>=')
-      # Also check the task vars that come further are undefined, i.e. there
-      # is no way to bypass next assert because it is not possible to override
-      # these two variables
-      - lv_from_ansible_mounts is undefined
-      - lv_from_ansible_devices is undefined
-
-
-################################################################################
-#
-- name: "validate system internal consistency based on ansible_facts"
-  assert:
-    that:
-      # We rely on ansible_mounts, as long as they're reliable. This assertion
-      # is to state if they're or not. Yes.
-      #
-      # That is what happens when a LV is renamed but not remounted... Say:
-      # - LV /dev/mapper/vg0-foobar is mounted on DIR /srv/foo/bar
-      # - LV 'foobar' is renamed 'foo': `lvrename vg0/foobar foo`
-      # - you KNOW /dev/mapper/vg0-foo is mounted on /srv/foo/bar, BUT...
-      # - df, findmnt, mount and /proc/mounts still show /dev/mapper/vg0-foobar
-      #   mounted on /srv/foo/bar, and /dev/mapper/vg0-foo is unknown to them,
-      #   BUT (again)...
-      # - lsblk and blkid show /dev/mapper/vg0-foo mounted on /srv/foo/bar !!!
-      #
-      # So what ?
-      # In such cases, ansible_mounts is out-of-sync and ansible_devices and
-      # ansible_lvm are up-to-date. That's just a matter of comparison between
-      # complex objects. They're defined in task vars for better readability
-      # of the assertion.
-      - lv_from_ansible_mounts | difference(lv_from_ansible_devices) == []
-
-      # Let a chance to use this role to unmount the fs that hides others
-      - ansible_mounts | json_query('[?!block_size].mount') == [] or
-        filesystems__state|d() in ['absent', 'unmounted']
-
-    fail_msg: "There is a mess in the filesystems stack.
-      {%- if lv_from_ansible_mounts | difference(lv_from_ansible_devices) != [] %}
-      LV {{ lv_from_ansible_mounts | difference(lv_from_ansible_devices) | join(' and ') }}
-      still exist in `ansible_mounts` while not in `ansible_devices`. That means
-      some system tools are out-of-sync. This may be due to a manual renaming of
-      an LV without remounting it after. You should rename it back or remount it,
-      and ensure /etc/fstab is up-to-date. System tools as findmnt(8), lsblk(8)
-      and blkid(8) and their manual pages, in addition to LVM tools, may be of
-      great help to diagnose the issue.
-
-      {%- elif ansible_mounts | json_query('[?!block_size].mount') != [] %}
-      {{ ansible_mounts | json_query('[?!block_size].mount') | join(' and ') }}
-      {{ 'are' if ansible_mounts | json_query('[?!block_size].mount') | length > 1 else 'is' }}
-      currently mounted but hidden by another mount. It means that nothing can
-      be done or undone on the hidden filesystem(s) while the overmount is still
-      active. You should unmount it prior to attempt to build other things on it.
-      {%- endif %}
-      Please cleanup the mess before moving forward."
-
-  vars:
-    lv_from_ansible_mounts: "{{ ansible_mounts
-      | json_query('[*].device')
-      | select('search', '^/dev/mapper/.*')
-      | list }}"
-    lv_from_ansible_devices: "{{ ansible_devices
-      | dict2items
-      | json_query('[*].value.links.ids')
-      | flatten
-      | select('search', 'dm-name-.*')
-      | map('regex_replace', 'dm-name-', '/dev/mapper/')
-      | list }}"
 
 
 ################################################################################
@@ -145,7 +79,6 @@
 
       # 3. Variables set in loop_var
       - _fs_item is undefined
-      - _fs_parents_item is undefined
       - fstab_item is undefined
 
 
@@ -181,8 +114,8 @@
           - _fs_item.vg is defined or filesystems__default_vg in ansible_lvm.vgs
 
           # The filesystem type, the volume size or the mount options don't
-          # matter when removing all this. So it could be nice to perform a
-          # triage here.
+          # matter when unmounting/removing a LV. This is why these keys have
+          # default values.
           # Accepted size formats:
           # - Amounts are integers
           # - Absolute units are k, m, g and t, case insensitive:
@@ -201,10 +134,6 @@
 
           - _fs_item.fstype is undefined or _fs_item.fstype in ['ext4', 'xfs']
           - _fs_item.fstype is defined or filesystems__default_fstype in ['ext4', 'xfs']
-
-          # XFS filsystem type is not shrinkable
-          - _fs_item.fstype | d(filesystems__default_fstype) != 'xfs' or
-            _fs_item.size | d(filesystems__default_size) is not match('-')
 
           # Exhaustivity is not a goal on its own. This is just a kind of example
           # of checking optional parameters. Think if you really want to check
@@ -268,9 +197,8 @@
           {%- if fs_hidden_by != [] %}
           {{ fs_canonical }} is currently mounted but hidden by a mount over
           {{ fs_hidden_by | join(' and ') }}. Absolutely nothing can be done or
-          undone with {{ fs_canonical }} while its overmount is still active.
-          Please unmount {{ fs_hidden_by | join(' and ') }} before moving
-          forward.
+          undone with {{ fs_canonical }} while it's still overmounted. Please
+          unmount {{ fs_hidden_by | join(' and ') }} before moving forward.
 
           {%- elif filesystems__state in ['present'] and fs_ismounted | bool %}
           {{ fs_subhidden | join(' and ') }}

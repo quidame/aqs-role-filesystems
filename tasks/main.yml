@@ -33,6 +33,7 @@
 #   device !
 #
 - import_tasks: normalize-fstab.yml
+  check_mode: true
 
 
 ################################################################################
@@ -50,6 +51,12 @@
     --units B
     --nosuffix
   register: filesystems__lvs_command
+  changed_when: false
+  check_mode: false
+
+- name: "get relevant info about mounted devices"
+  command: lsblk --output fstype,mountpoint,path --json
+  register: filesystems__lsblk_command
   changed_when: false
   check_mode: false
 
@@ -115,6 +122,7 @@
 
     # Get the list of LVs with useful fields from the command above
     filesystems__lvs: "{{ filesystems__lvs_command.stdout | from_json | json_query('report[*].lv') | flatten }}"
+    filesystems__lsblk: "{{ filesystems__lsblk_command.stdout | from_json | json_query('blockdevices') }}"
 
     #===========================================================================
     # Normalize user input, i.e. fill missing but mandatory fields with default

@@ -89,7 +89,7 @@
 - name: "stat paths that devices and mountpoints could be renamed to"
   stat:
     path: "{{ _fs_item.target }}"
-  loop: "{{ _fs_rename_ }}"
+  loop: "{{ _fs_rename_ | json_query('[?type==`dir`]') }}"
   loop_control:
     loop_var: _fs_item
     label:
@@ -99,24 +99,20 @@
 
 
 # Fail for invalid renaming cadidates:
-# - target LV must not already exist
 # - target dir is not an active mountpoint (gathered facts are required)
 # - if target dir exists, it's an empty directory.
 #
 - name: "assert that the target of renaming is not already in use"
   assert:
     that:
-      - _fs_item.type != 'dev' or not _fs_rename_stat_.results[_fs_index].stat.exists
-      - _fs_item.type != 'dir' or not _fs_rename_stat_.results[_fs_index].stat.exists or
+      - _fs_item.target not in ansible_mounts | json_query('[*].mount')
+      - not _fs_rename_stat_.results[_fs_index].stat.exists or
         ( _fs_rename_stat_.results[_fs_index].stat.isdir and _fs_rename_stat_.results[_fs_index].stat.nlink == 2 )
-      - _fs_item.type != 'dir' or
-        _fs_item.target not in ansible_mounts | json_query('[*].mount')
-    fail_msg: "You attempt to {{ 'rename device' if _fs_item.type == 'dev' else 'move location of' }} \
-      {{ _fs_item.source }} to {{ _fs_item.target }}, which {{ 'already exists' if _fs_item.type == 'dev'
-      else 'is already an active mountpoint' if _fs_item.target in ansible_mounts | json_query('[*].mount')
+    fail_msg: "You attempt to move location of {{ _fs_item.source }} to {{ _fs_item.target }}, which \
+      {{ 'is already an active mountpoint' if _fs_item.target in ansible_mounts | json_query('[*].mount')
       else 'is not an empty directory' }}. Maybe something is wrong with your setup, or something needs \
       to be (un)done on the host. Please cleanup the mess before moving forward."
-  loop: "{{ _fs_rename_ }}"
+  loop: "{{ _fs_rename_ | json_query('[?type==`dir`]') }}"
   loop_control:
     loop_var: _fs_item
     index_var: _fs_index
@@ -175,9 +171,12 @@
 #
 - name: "rename Logical Volumes"
   command: |
-    lvrename \
-    {{ _fs_item.source | basename | regex_replace( '([^-])-([^-])', '\1/\2' ) | regex_replace('--', '-') }} \
+    lvrename
+    {{ '--test' if ansible_check_mode else '' }}
+    {{ _fs_item.source | basename | regex_replace( '([^-])-([^-])', '\1/\2' ) | regex_replace('--', '-') }}
     {{ _fs_item.target | basename | regex_replace( '([^-])-([^-])', '\1/\2' ) | regex_replace('--', '-') }}
+  args:
+    creates: "{{ _fs_item.target }}"
   loop: "{{ __tempvar0__ }}"
   loop_control:
     loop_var: _fs_item
