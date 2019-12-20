@@ -4,6 +4,15 @@
 
 
 ################################################################################
+# BACKWARD COMPATIBILITY
+#
+# Tasks to ensure bacward compatibility across versions, when changes occur in
+# variable names or type/format.
+#
+#- import_tasks: backward-compatibility.yml
+
+
+################################################################################
 # CHECK POINT
 #
 # The check points are developped in a dedicated file. Their purpose is to fail
@@ -24,7 +33,32 @@
 #   device !
 #
 - import_tasks: normalize-fstab.yml
+  check_mode: true
 
+
+################################################################################
+# GET MORE FACTS
+#
+# Retrieve all relevant info we'll need further.
+# To make use of this registered variable:
+# dictlist: "{{ filesystems__lvs.stdout | from_json | json_query('report[*].lv') }}"
+#
+- name: "get relevant info about Logical Volumes with 'lvs'"
+  command: |
+    lvs
+    --options vg_name,vg_size,vg_free,vg_extent_size,lv_size,lv_dm_path
+    --reportformat json
+    --units B
+    --nosuffix
+  register: filesystems__lvs_command
+  changed_when: false
+  check_mode: false
+
+- name: "get relevant info about mounted devices"
+  command: lsblk --output fstype,mountpoint,path --json
+  register: filesystems__lsblk_command
+  changed_when: false
+  check_mode: false
 
 
 
@@ -33,50 +67,332 @@
 # SERIAL OR SEQUENTIAL
 #
 # The sequential mode is more suitable for very complicated things (as long as
-# there is no renaming between), and serial mode is faster.
+# there is no renaming between), and serial mode is faster. We play them in a
+# block so we can share variables.
+#
+- name: "manage filesystems"
+  block:
+
+    ############################################################################
+    # sequential
+    #
+    #   Only one filesystem is set/unset at a time.
+    #   - 1st filesystem: all tasks
+    #   - 2nd filesystem: all tasks
+    #   For example: fully setup a filesystem, then fully setup the next one...
+    #
+    - name: "{{ filesystems__task_verb }} filesystems in sequential mode"
+      when: "filesystems__behaviour == 'sequential'"
+      include_tasks: "state_{{ filesystems__state }}.yml"
+      loop: |
+        [
+          {% for d in __fslist_order__ %}
+          [ {{ d }} ]{{ '' if loop.last else ',' }}
+          {% endfor %}
+        ]
+      loop_control:
+        loop_var: __fs__dictlist__
+        label:
+          device: "{{ __fs__dictlist__.0.device }}"
+          path: "{{ __fs__dictlist__.0.path }}"
 
 
-################################################################################
-# sequential
-#
-#   Only one filesystem is set/unset at a time.
-#   - 1st filesystem: all tasks
-#   - 2nd filesystem: all tasks
-#   For example: fully setup a filesystem, then fully setup the next one...
-#
-- name: "{{ filesystems__action }} filesystems in sequential mode"
-  when: "filesystems__behaviour == 'sequential'"
-  include_tasks: "{{ filesystems__action }}.yml"
-  loop: |
-    [
-      {% for d in __fslist_order__ %}
-      [ {{ d }} ]{{ '' if loop.last else ',' }}
-      {% endfor %}
-    ]
-  loop_control:
-    loop_var: __fs__dictlist__
-    label: { "path": "{{ __fs__dictlist__.0.path }}" }
+    ############################################################################
+    # serial
+    #
+    #   Each task is applied to all listed filesystems at once.
+    #   - 1st task: all filesystems
+    #   - 2nd task: all filesystems
+    #   For example: create all LV, then create all FS, then mount all FS
+    #
+    - name: "{{ filesystems__task_verb }} filesystems in serial mode"
+      when: "filesystems__behaviour == 'serial'"
+      include_tasks: "state_{{ filesystems__state }}.yml"
+      vars:
+        __fs__dictlist__: "{{ __fslist_order__ }}"
+
+
+  # Block vars are set for all tasks of the block, and are available for the
+  # more specific tasks vars.
   vars:
-    # The list is sorted against the mountpoints to ensure nested mounts are
-    # done in the right order and unmounted in reverse order.
-    __fslist_setup__: "{{ filesystems__fslist | sort(attribute='path') }}"
-    __fslist_unset__: "{{ filesystems__fslist | sort(attribute='path') | reverse | list }}"
-    __fslist_order__: "{{ __fslist_setup__ if filesystems__action == 'setup' else __fslist_unset__ }}"
+    filesystems__task_verb: "{{
+      'setup' if filesystems__state == 'present' else
+      'unset' if filesystems__state == 'absent' else
+      'unmount' }}"
 
+    # Get the list of LVs with useful fields from the command above
+    filesystems__lvs: "{{ filesystems__lvs_command.stdout | from_json | json_query('report[*].lv') | flatten }}"
+    filesystems__lsblk: "{{ filesystems__lsblk_command.stdout | from_json | json_query('blockdevices') }}"
 
-################################################################################
-# serial
-#
-#   Each task is applied to all listed filesystems at once.
-#   - 1st task: all filesystems
-#   - 2nd task: all filesystems
-#   For example: create all LV, then create all FS, then mount all FS
-#
-- name: "{{ filesystems__action }} filesystems in serial mode"
-  when: "filesystems__behaviour == 'serial'"
-  include_tasks: "{{ filesystems__action }}.yml"
-  vars:
-    __fslist_setup__: "{{ filesystems__fslist | sort(attribute='path') }}"
-    __fslist_unset__: "{{ filesystems__fslist | sort(attribute='path') | reverse | list }}"
-    __fslist_order__: "{{ __fslist_setup__ if filesystems__action == 'setup' else __fslist_unset__ }}"
-    __fs__dictlist__: "{{ __fslist_order__ }}"
+    #===========================================================================
+    # Normalize user input, i.e. fill missing but mandatory fields with default
+    # values provisionned in filesystems__default_* variables. Also override
+    # the 'path' by removing trailing slash and double slash. And append a key
+    # derived from 2 others so we'll not have to do it later.
+    filesystems__fslist_preprocess_0: |
+      [
+        {% for d in filesystems__fslist %}
+        {% set path = d.path | regex_replace('/+', '/') | regex_replace('/$', '') %}
+
+        {% if d.lv is defined %}
+          {% set lv = d.lv %}
+          {% set vg = d.vg | d(filesystems__default_vg) %}
+          {% set device = "/dev/mapper/%s-%s" % (vg | replace('-','--'), lv | replace('-','--')) %}
+          {% set fstype = d.fstype | d(filesystems__default_fstype) %}
+        {% else %}
+          {% set fstype = ansible_mounts | json_query('[?mount == `%s`].fstype' % path) | first %}
+          {% set device = ansible_mounts | json_query('[?mount == `%s`].device' % path) | first %}
+          {% set vg = device | basename | regex_replace('(.*[^-])-[^-].*', '\1') | replace('--', '-') %}
+          {% set lv = device | basename | regex_replace('.*[^-]-([^-].*)', '\1') | replace('--', '-') %}
+        {% endif %}
+
+        {% set D = {
+          "device": "%s" % device,
+          "fstype": "%s" % fstype,
+          "path": "%s" % path,
+          "lv": "%s" % lv,
+          "vg": "%s" % vg
+          } %}
+
+        {% if filesystems__state in ['present'] %}
+          {% set D = D | combine({
+            "size": "%s" % (d.size | d(filesystems__default_size)),
+            "force_mkfs": d.force_mkfs | d(d.force | d(filesystems__default_force_mkfs)) | bool
+            }) %}
+        {% elif filesystems__state in ['absent'] %}
+          {% set D = D | combine({
+            "force_kill": d.force_kill | d(d.force | d(filesystems__default_force_kill)) | bool,
+            "force_wipe": d.force_wipe | d(d.force | d(filesystems__default_force_wipe)) | bool
+            }) %}
+        {% elif filesystems__state in ['unmounted'] %}
+          {% set D = D | combine({
+            "force_kill": d.force_kill | d(d.force | d(filesystems__default_force_kill)) | bool
+            }) %}
+        {% endif %}
+
+        {{ d | combine(D) }}{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    #===========================================================================
+    # Something else to do ? Maybe it's not a good idea to mix user input and
+    # gathered facts (ansible_mounts, ansible_devices, ansible_lvm) so early...
+    filesystems__fslist_preprocess_1: |
+      [
+        {% for d in filesystems__fslist_preprocess_0 %}
+        {% set D = {} %}
+
+        {% if [d.device] == ansible_mounts | json_query('[?mount == `%s`].device' % d.path) and
+              [d.path] == ansible_mounts | json_query('[?device == `%s`].mount' % d.device) %}
+          {% set status = "mounted" %}
+        {% elif d.device in ansible_mounts | json_query('[*].device') or
+                d.path in ansible_mounts | json_query('[*].mount') %}
+          {% set status = "unknown" %}
+        {% elif d.device in filesystems__lvs | json_query('[*].lv_dm_path') %}
+          {% set status = "unmounted" %}
+        {% else %}
+          {% set status = "absent" %}
+        {% endif %}
+        {% set D = D | combine({"status": "%s" % status}) %}
+
+        {{ d | combine(D) }}{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    #===========================================================================
+    # But it makes sense to avoid common mistakes about LV and FS resizing...
+    # This is mainly about resizing.
+    filesystems__fslist_preprocess_2: |
+      [
+        {% for d in filesystems__fslist_preprocess_1 %}
+        {% set D = {} %}
+
+        {% if filesystems__state in ['present'] %}
+
+          {#
+            # 1. The target LV already exists. Get its current size (in bytes)
+          -#}
+          {% if d.device in filesystems__lvs | json_query('[*].lv_dm_path') %}
+            {% set current_size = filesystems__lvs | json_query('[?lv_dm_path == `%s`].lv_size' % d.device) | first | int %}
+            {% set D = D | combine({
+              "current_size": current_size
+              }) %}
+
+          {#
+            # 2. The target LV seems to not exist, except the target mountpoint
+            #    is currently active. So it's just a matter of renaming of an
+            #    existing LV.
+          -#}
+          {% elif d.path in ansible_mounts | json_query('[*].mount') and filesystems__update_paths|bool %}
+            {% set origin = ansible_mounts | json_query('[?mount == `%s`].device' % d.path) | first %}
+            {% if origin in filesystems__lvs | json_query('[*].lv_dm_path') %}
+              {% set current_size = filesystems__lvs | json_query('[?lv_dm_path == `%s`].lv_size' % origin) | first | int %}
+              {% set D = D | combine({
+                "device_to_rename": "%s" % origin,
+                "current_size": current_size
+                }) %}
+            {% endif %}
+          {% endif %}
+
+        {% endif %}
+
+        {{ d | combine(D) }}{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    #===========================================================================
+    # This is about resizing too. For specific size formats.
+    filesystems__fslist_preprocess_3: |
+      [
+        {% for d in filesystems__fslist_preprocess_2 %}
+        {% set D = {} %}
+
+        {% if filesystems__state in ['present'] %}
+
+          {#
+            # WORKAROUND
+            # lvol module supports almost all size formats that are supported
+            # by lvcreate, lvextend and lvreduce. Almost all but +2G, -512m and
+            # the likes. So this is a workaround to accept +1G as a valid size.
+            # We will save the requested size into a new dictionary key, and
+            # override the 'size' value. This piece of code is to compute the
+            # new value, absolute, in 'M' units (or 'm', i.e. 1024×1024 bytes)
+          -#}
+          {% if d.size is match('[-+][1-9][0-9]*[BkKmMgGtT]$') %}
+            {% set size_amount = d.size | regex_replace('^.(.+).$', '\\1') | int %}
+            {% set size_unit = d.size | regex_replace('^.*(.)$', '\\1') %}
+            {% set __bytes__ = size_amount * filesystems__units[size_unit]|int %}
+
+            {% if d.size is match('\+') %}
+              {% set expected = (d.current_size|d(0) + __bytes__) | int %}
+            {% elif d.current_size is defined %}
+              {% set expected = (d.current_size|int - __bytes__) | int %}
+            {#
+              # else, if size starts with a '-' and the device doesn't exist,
+              # just leave the user input unchanged. lvol will fail and complain
+              # about unsupported format.
+            -#}
+            {% endif %}
+
+            {% if expected is defined %}
+              {#
+                # Round size up to the next extent, and convert it in M. Then
+                # prepare to override 'size'.
+              -#}
+              {% set modulo = filesystems__lvs | json_query('[?vg_name == `%s`].vg_extent_size' % d.vg) | first | int %}
+              {% set expected_size = (((expected / modulo) | round(method='ceil')) * modulo) | int %}
+              {% set D = D | combine({
+                "requested_size": "%s" % d.size,
+                "size": "%sM" % ((expected_size / filesystems__units.M|int) | int | string)
+                }) %}
+            {% endif %}
+          {% endif %}
+
+        {% endif %}
+
+        {{ d | combine(D) }}{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    #===========================================================================
+    # This is all about resizing again: how to make it smarty.
+    filesystems__fslist_preprocess_4: |
+      [
+        {% for d in filesystems__fslist_preprocess_3 %}
+        {% set D = {} %}
+
+        {% if filesystems__state in ['present'] %}
+
+          {#
+            # This part is to ease management of resizing. There are currently
+            # 3 module parameters that may allow or disallow resizing, that may
+            # also depend on filesystem type and direction of resizing. For the
+            # module itself, the booleans 'resizefs', 'shrink', 'force' product
+            # 8 combinations, some leading to fail because of inconsistency. So
+            # we use two dedicated variables, that are more explicit for the
+            # user, and that preset 'resizefs', 'shrink' and 'force' to a valid
+            # combination. Then they will be overridden due to filesystem
+            # capabilities, because user needs fine-grained control over them.
+          -#}
+
+          {#
+            # First, we assume that if the user says +SIZE, it means 'extend of
+            # SIZE'; and if he says '-SIZE', it means 'reduce of SIZE'.
+          -#}
+          {% if d.requested_size is defined and d.requested_size is match('\+') %}
+            {% set allow_extend = True %}
+            {% set allow_reduce = False %}
+          {% elif d.requested_size is defined and d.requested_size is match('-') %}
+            {% set allow_extend = False %}
+            {% set allow_reduce = True %}
+          {% else %}
+            {% set allow_extend = d.allow_extend | d(filesystems__allow_extend | d(True)) | bool %}
+            {% set allow_reduce = d.allow_reduce | d(filesystems__allow_reduce | d(False)) | bool %}
+          {% endif %}
+
+          {#
+            # ext4 can be extended when mounted or not; can be reduced when
+            # unmounted.
+          -#}
+          {% if d.fstype in ['ext4'] %}
+            {% if d.status == "mounted" %}
+              {% set allow_reduce = False %}
+            {% elif d.status == "unknown" and not filesystems__update_paths|bool %}
+              {% set allow_reduce = False %}
+            {% endif %}
+          {#
+            # xfs can only be extended, and only when mounted; can't be reduced
+            # at all.
+          -#}
+          {% elif d.fstype in ['xfs'] %}
+            {% set allow_reduce = False %}
+            {% if d.status == "unmounted" %}
+              {% set allow_extend = False %}
+            {% elif d.status == "unknown" and not filesystems__update_paths|bool %}
+              {% set allow_extend = False %}
+            {% endif %}
+          {% endif %}
+
+          {#
+            # If the device doesn't already exist, what about resizing it ?
+          -#}
+          {% if d.current_size is undefined %}
+            {% set allow_extend = False %}
+            {% set allow_reduce = False %}
+          {% endif %}
+
+          {% if allow_reduce %}
+            {% set resizefs = True %}
+            {% set shrink = True %}
+            {% set force = True %}
+          {% elif allow_extend %}
+            {% set resizefs = True %}
+            {% set shrink = False %}
+            {% set force = False %}
+          {% else %}
+            {% set resizefs = False %}
+            {% set shrink = False %}
+            {% set force = False %}
+          {% endif %}
+
+          {% set D = D | combine({
+            "shrink": d.shrink | d(filesystems__default_shrink | d(shrink)) | bool,
+            "resizefs": d.resizefs | d(filesystems__default_resizefs | d(resizefs)) | bool,
+            "force_lvol": d.force_lvol | d(filesystems__default_force_lvol | d(force)) | bool
+            }) %}
+
+        {% endif %}
+
+        {{ d | combine(D) }}{{ '' if loop.last else ',' }}
+        {% endfor %}
+      ]
+
+    #===========================================================================
+    # And finally...
+    filesystems__fslist_preprocessed: "{{ filesystems__fslist_preprocess_4 }}"
+
+    # The list is sorted against the mountpoints to ensure nested mounts
+    # are done in the right order and unmounted in reverse order.
+    __fslist_setup__: "{{ filesystems__fslist_preprocessed | sort(attribute='path') }}"
+    __fslist_unset__: "{{ filesystems__fslist_preprocessed | sort(attribute='path') | reverse | list }}"
+    __fslist_order__: "{{ __fslist_setup__ if filesystems__state in ['present'] else __fslist_unset__ }}"

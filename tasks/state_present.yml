@@ -1,0 +1,157 @@
+---
+# role: filesystems
+# file: tasks/state_present.yml
+#
+# Tasks to setup filesystems as well as their underlying Logical Volumes.
+
+
+# This will compare running state (ansible_mounts) with preprocessed user input
+# (stored in __fs__dictlist__) to quickly know if something is to be renamed.
+# It will set the variable _fs_rename_.
+#
+- import_tasks: cross-facts.yml
+
+
+# The only way to keep consistency when changing the 'path' or the 'lv' value
+# is to change it on the host, or fail as soon as possible if not doable.
+#
+- name: "include tasks to change paths of devices or mountpoints"
+  include_tasks: rename.yml
+  when:
+    - _fs_rename_.0 is defined
+    - filesystems__update_paths | bool
+
+
+# This block is added to work around restrictive umasks and grant access to
+# the filesystem (to be created) to its owner. Common practices (but not all
+# good) are to set parent directories:
+# * 0755 root:root
+#   + The default with factory's defaults
+#   + Recommended for almost all usecases
+#   - Has to be explicit with non default restrictive umasks
+# * 0750 owner:group
+#   - Doesn't really add a security layer
+#   - Makes inner filesystems invisible to 'df' for other users
+#
+# Another practice could be to create directories with the same properties
+# than their parent mountpoint, but it seems to be harder to implement. It
+# would consist in:
+# - get the first parent mountpoint (the longer common prefix compared to other
+#   mounts (ansible_mounts)
+# - stat it
+# - set owner:group and permissions based on stat results
+#
+- name: "include tasks to create parent directories with non-default properties"
+  include_tasks: parents-setup.yml
+  vars:
+    __mountpoints__: "{{ __fs__dictlist__ | json_query('[*].path') }}"
+  when:
+    - filesystems__parents != {}
+
+
+# Only one parameter is mandatory, the LV name. Others are either omitted if
+# possible, or provided with a default value. But note that all parameters of
+# the module are supported, if necessary.
+#
+- name: "create Logical Volumes"
+  lvol:
+    lv:       "{{ _fs_item.lv }}"
+    vg:       "{{ _fs_item.vg }}"
+    size:     "{{ _fs_item.size }}"
+    force:    "{{ _fs_item.force_lvol }}"
+    resizefs: "{{ _fs_item.resizefs }}"
+    shrink:   "{{ _fs_item.shrink }}"
+    opts:     "{{ _fs_item.lvol_opts | d(filesystems__default_lvol_opts | d(omit)) }}"
+    pvs:      "{{ _fs_item.pvs       | d(filesystems__default_pvs       | d(omit)) }}"
+    state: present
+  loop: "{{ __fs__dictlist__ }}"
+  loop_control:
+    loop_var: _fs_item
+    # As the filesystems__fslist dictionnaries support a lot of keys, we keep
+    # only the most relevant against the name of the task.
+    label:
+      vg: "{{ _fs_item.vg }}"
+      lv: "{{ _fs_item.lv }}"
+      size: "{{ _fs_item.size }}"
+  notify:
+    - validate_fstab
+
+
+# Again, there is only one mandatory parameter, that is the same as above. We
+# use /dev/VG/LV path scheme here, because it's simpler to build than DM scheme
+# /dev/mapper/VG-LV.
+#
+- name: "create filesystems on Logical Volumes"
+  filesystem:
+    device: "{{ _fs_item.device }}"
+    fstype: "{{ _fs_item.fstype }}"
+    force:  "{{ _fs_item.force_mkfs }}"
+    opts:   "{{ _fs_item.mkfs_opts | d(filesystems__default_mkfs_opts | d(omit)) }}"
+  loop: "{{ __fs__dictlist__ }}"
+  loop_control:
+    loop_var: _fs_item
+    label:
+      fstype: "{{ _fs_item.fstype }}"
+      dev: "{{ _fs_item.device }}"
+  notify:
+    - validate_fstab
+
+
+# This task introduces a new mandatory parameter, that is the absolute path of
+# the mountpoint. THe third parameter that is mandatory for the module is given
+# a default value by the role.
+# We use /dev/mapper/VG-LV path scheme here becausea of kernel compliance: this
+# is always this path scheme that is exposed by the kernel in /proc/mounts and
+# by other tools such as lsblk and blkid, so it should be considered canonical
+# to populate fstab with. Also, directory names are made canonical too for the
+# same reason.
+#
+- name: "mount filesystems and register them in fstab"
+  mount:
+    path:   "{{ _fs_item.path }}"
+    src:    "{{ _fs_item.device }}"
+    fstype: "{{ _fs_item.fstype }}"
+    opts:   "{{ _fs_item.mountopts | d(filesystems__default_mountopts | d(omit)) }}"
+    dump:   "{{ _fs_item.dump      | d(filesystems__default_dump      | d(omit)) }}"
+    passno: "{{ _fs_item.passno    | d(filesystems__default_passno    | d(omit)) }}"
+    backup: "{{ _fs_item.backup    | d(filesystems__default_backup    | d(omit)) }}"
+    state: mounted
+  loop: "{{ __fs__dictlist__ }}"
+  loop_control:
+    loop_var: _fs_item
+    label:
+      src: "{{ _fs_item.device }}"
+      path: "{{ _fs_item.path }}"
+  notify:
+    - reload_systemd
+    - validate_fstab
+
+
+# Again, we just reuse the same mandatory parameter as above.
+- name: "update access permissions to the roots of filesystems"
+  file:
+    path:    "{{ _fs_item.path }}"
+    attr:    "{{ _fs_item.attr    | d(filesystems__default_attr    | d(omit)) }}"
+    mode:    "{{ _fs_item.mode    | d(filesystems__default_mode    | d(omit)) }}"
+    owner:   "{{ _fs_item.owner   | d(filesystems__default_owner   | d(omit)) }}"
+    group:   "{{ _fs_item.group   | d(filesystems__default_group   | d(omit)) }}"
+    selevel: "{{ _fs_item.selevel | d(filesystems__default_selevel | d(omit)) }}"
+    serole:  "{{ _fs_item.serole  | d(filesystems__default_serole  | d(omit)) }}"
+    setype:  "{{ _fs_item.setype  | d(filesystems__default_setype  | d(omit)) }}"
+    seuser:  "{{ _fs_item.seuser  | d(filesystems__default_seuser  | d(omit)) }}"
+    state: directory
+  loop: "{{ __fs__dictlist__ }}"
+  loop_control:
+    loop_var: _fs_item
+    label: |
+      {
+        "path": "{{ _fs_item.path }}"
+        {%- if _fs_item.attr is defined %},
+        "attr": "{{ _fs_item.attr }}"{% endif %}
+        {%- if _fs_item.mode is defined %},
+        "mode": "{{ _fs_item.mode }}"{% endif %}
+        {%- if _fs_item.owner is defined %},
+        "owner": "{{ _fs_item.owner }}"{% endif %}
+        {%- if _fs_item.group is defined %},
+        "group": "{{ _fs_item.group }}"{% endif %}
+      }

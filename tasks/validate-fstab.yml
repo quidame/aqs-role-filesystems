@@ -11,21 +11,38 @@
   command: awk '/^\s*[^#]/ {print $1,$2,$3,$4,$5,$6}' /etc/fstab
   register: fstab_awk
   changed_when: false
+  check_mode: false
+
+
+# This will prevent looping over long lists in the 'stat' task below. The cost
+# of 'setup' with a filter is probably much less. We will assume that mount
+# points (but not devices) in ansible_mounts don't need to be stat'd to ensure
+# they exist.
+- name: "regather fact 'ansible_mounts'"
+  setup:
+    filter: ansible_mounts
 
 
 - name: "validate fstab entries"
   block:
 
+    - name: "(python2) preset fstab assertions"
+      set_fact:
+        fstab_assertions_for_python2: "{{ fstab_assertions }}"
+      when: ansible_playbook_python | basename is not match('python3')
+
+
     - name: "track duplicates, unpredictable names and bad fstypes in /etc/fstab"
       assert:
-        that: "{{ fstab_assertions }}"
+        that: "{{ fstab_assertions_for_python2 | d(fstab_assertions) }}"
 
 
-    - name: "check that all devices and mountpoints recorded in /etc/fstab exist"
+    - name: "check that devices and mountpoints recorded in /etc/fstab exist"
       stat:
         path: "{{ fstab_item }}"
         follow: yes
-      loop: "{{ fstab_mountpoints + fstab_devicelinks }}"
+      loop: "{{ ( fstab_mountpoints + fstab_devicelinks )
+                | difference(ansible_mounts | json_query('[*].mount')) }}"
       loop_control:
         loop_var: fstab_item
       register: fstab_path
@@ -74,7 +91,6 @@
   vars:
     # Translate flat fstab content into a dictlist with an additional field
     # (the "link" is to stat devices recorded as UUID=* or LABEL=* in fstab).
-    __tempvar0__: |
     fstab_dicts: |
       [
         {% for fs in fstab_awk.stdout_lines %}{
@@ -85,9 +101,9 @@
           "dump":    "{{ fs.split(' ').4 }}",
           "passno":  "{{ fs.split(' ').5 }}",
           "link": {% if fs.split( ' ' ).0 is match('UUID=') %}
-            "{{ '/dev/disk/by-uuid/%s' % fs.split(' ').0 | replace('UUID=', '') }}"
+            "{{ fs.split(' ').0 | replace('UUID=', '/dev/disk/by-uuid/') }}"
             {% elif fs.split( ' ' ).0 is match('LABEL=') %}
-            "{{ '/dev/disk/by-label/%s' % fs.split(' ').0 | replace('LABEL=', '') }}"
+            "{{ fs.split(' ').0 | replace('LABEL=', '/dev/disk/by-label/') }}"
             {% else %}
             "{{ fs.split(' ').0 }}"
             {% endif %}
@@ -98,52 +114,3 @@
     fstab_filesystems: "{{ fstab_dicts | json_query('[*].device') }}"
     fstab_mountpoints: "{{ fstab_dicts | json_query('[*].mount') }}"
     fstab_devicelinks: "{{ fstab_dicts | json_query('[*].link') }}"
-
-    fstab_assertions: |
-      [
-        {###  1. Check for obvious/simple duplicates
-        }#}
-        "( fstab_mountpoints | sort ) == ( fstab_mountpoints | sort | unique )",
-        "( fstab_filesystems | sort ) == ( fstab_filesystems | sort | unique )",
-
-        {###  2. Check for hidden duplicated directories
-                /foo/bar vs /foo/bar/
-        }#}
-        {% for x in fstab_mountpoints %}
-        "'{{ x }}' in fstab_mountpoints and not '{{ x }}/' in fstab_mountpoints",
-        {% endfor %}
-
-        {###  3. Check for hidden duplicated devices
-                /dev/VG/LV vs /dev/mapper/VG-LV
-                Assert that if /dev/mapper/VG-LV is in the list, /dev/VG/LV is
-                not.
-        }#}
-        {% for x in fstab_filesystems if x is match('/dev/mapper/') %}
-        {% set X = '/dev/%s' % ( x | basename | regex_replace( '([^-])-([^-])', '\\1/\\2' ) | regex_replace( '--', '-' ) ) %}
-        "'{{ x }}' in fstab_filesystems and not '{{ X }}' in fstab_filesystems",
-        {% endfor %}
-
-        {###  4. Check for unpredictable names
-                /dev/sdb2, /dev/dm-7, /dev/xvda3, ...
-                Unpredictable names are those of the block devices themselves,
-                in /dev. Symlinks to them (and with predictable names) are all
-                in subdirectories in /dev.
-        }#}
-        {% for x in fstab_devicelinks %}
-        "'{{ x }}' is not match('/dev/[^/]+$')",
-        {% endfor %}
-
-        {###  5. Check for bad filesystem types
-                This will verify that a fstype recorded in fstab matches the one
-                in ansible_mounts for the same mountpoint. Since it is based on
-                ansible_mounts, fstab entries that are not currently mounted are
-                not checked. They will be in a next task by performing a real
-                mount call. This test about fstype is done here because mount
-                command will not raise an error with '-o remount'. So this piece
-                of code and the mount of inactive mountpoints are complementary.
-        }#}
-        {% for x in fstab_dicts | product(ansible_mounts) if x.1.mount == x.0.mount | regex_replace('/+$', '') %}
-        "'{{ x.1.mount }}' == '{{ x.0.mount | regex_replace('/+$', '') }}' and \
-         '{{ x.1.fstype }}' == '{{ x.0.fstype }}'"{{ '' if loop.last else ',' }}
-        {% endfor %}
-      ]

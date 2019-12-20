@@ -1,6 +1,6 @@
 ---
 # role: filesystems
-# file: tasks/unset.yml
+# file: tasks/state_absent.yml
 #
 # Tasks to unset filesystems as well as their underlying Logical Volumes.
 
@@ -23,33 +23,9 @@
     - filesystems__update_paths | bool
 
 
-# Some services may still write or read into files, or a user may stay
-# somewhere into the tree, making the mountpoint busy and leading the
-# umount command to fail. Killing all processes accessing the filesystem
-# will prevent this. This doesn't support cases such as:
-# - a directory on the mounted filesystem is itself an active mount
-# - a file on the mounted filesystem is associated to a loop device
-#
-- name: "kill remaining processes accessing filesystems"
-  command: |
-    fuser --kill \
-    -{{ 'KILL' if _fs_item.force|default(filesystems__default_force|default(False))|bool else 'TERM' }} \
-    --ismountpoint {{ _fs_item.path }}
-  loop: "{{ __fs__dictlist__ }}"
-  loop_control:
-    loop_var: _fs_item
-    # As the filesystems__fslist dictionnaries support a lot of keys, we keep
-    # only the most relevant against the name of the task.
-    label: "{{ _fs_item.path }}"
-  register: _fs_fuser_kill_
-  changed_when: _fs_fuser_kill_.rc == 0
-  failed_when: _fs_fuser_kill_.rc > 1
+- import_tasks: state_unmounted.yml
 
-
-# The list is reverse sorted against the mountpoints to ensure nested mounts
-# are undone in the right order.
-#
-- name: "unmount Filesystems"
+- name: "remove records in /etc/fstab"
   mount:
     path: "{{ _fs_item.path }}"
     state: absent
@@ -74,16 +50,19 @@
     get_attributes: no
     get_checksum: no
     get_mime: no
-    path: "/dev/{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+    path: "{{ _fs_item.device }}"
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
     loop_var: _fs_item
-    label: "/dev/{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+    label: "{{ _fs_item.device }}"
   register: _fs_wipefs_stat_
 
 
-- name: "wipe Filesystem signatures"
-  command: "wipefs --all {{ _fs_item }}"
+- name: "wipe filesystem signatures"
+  command: |
+    wipefs --all {{ '--no-act' if ansible_check_mode else '' }}
+    {{ '--force' if _fs_item in __fs__dictlist__|json_query('[?force_wipe].device') else '' }}
+    {{ _fs_item }}
   loop: "{{ __tempvar0__ }}"
   loop_control:
     loop_var: _fs_item
@@ -105,13 +84,15 @@
 - name: "remove Logical Volumes"
   lvol:
     lv: "{{ _fs_item.lv }}"
-    vg: "{{ _fs_item.vg | default(filesystems__default_vg) }}"
+    vg: "{{ _fs_item.vg }}"
     state: absent
     force: yes
   loop: "{{ __fs__dictlist__ }}"
   loop_control:
     loop_var: _fs_item
-    label: "{{ _fs_item.vg | default(filesystems__default_vg) }}/{{ _fs_item.lv }}"
+    label:
+      vg: "{{ _fs_item.vg }}"
+      lv: "{{ _fs_item.lv }}"
   notify:
     - validate_fstab
 

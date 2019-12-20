@@ -3,12 +3,9 @@
 # file: tasks/cross-facts.yml
 
 
-# We'll rely on ansible_mounts in the next task, so make it reliable (that's
-# mandatory in sequential mode, and highly recommended in serial mode).
-#
-- name: "regather fact 'ansible_mounts'"
-  setup:
-    filter: ansible_mounts
+- name: "display __fs__dictlist__"
+  debug:
+    var: __fs__dictlist__
 
 
 # The only purpose of this file is to deduplicate code, as the built object is
@@ -21,13 +18,11 @@
   set_fact:
     _fs_rename_: "{{ __tempvar2__ | sort(attribute='old.dir') | reverse | list }}"
   vars:
-    # Keep a small subset of ansible_mounts. Other keys are not relevant for
-    # our needs, and so filtered.
     __tempvar0__: |
       [
-        {% for m in ansible_mounts %}{
-          "dev": "{{ m.device }}",
-          "dir": "{{ m.mount }}",
+        {% for m in filesystems__lsblk if m.path is match('/dev/mapper/') %}{
+          "dev": "{{ m.path }}",
+          "dir": "{{ m.mountpoint }}",
           "fstype": "{{ m.fstype }}"
           }{{ '' if loop.last else ',' }}
         {% endfor %}
@@ -35,10 +30,10 @@
 
     __tempvar1__: |
       [
-        {% for m in __fs__dictlist__ %} {
-          "dev": "/dev/mapper/{{ m.vg | default(filesystems__default_vg) | regex_replace('-', '--') }}-{{ m.lv | regex_replace('-', '--') }}",
-          "dir": "{{ m.path | regex_replace('/+$', '') }}",
-          "fstype": "{{ m.fstype | default(filesystems__default_fstype) }}",
+        {% for m in __fs__dictlist__ %}{
+          "dev": "{{ m.device }}",
+          "dir": "{{ m.path }}",
+          "fstype": "{{ m.fstype }}",
           }{{ '' if loop.last else ',' }}
         {% endfor %}
       ]
@@ -63,10 +58,10 @@
           "fstype": "{{ p.0.fstype }}",
           "new": { "dev": "{{ p.1.dev }}", "dir": "{{ p.1.dir }}" },
           "old": { "dev": "{{ p.0.dev }}", "dir": "{{ p.0.dir }}" },
-          {% if p.0.dev == p.1.dev %}
-          "source": "{{ p.0.dir }}", "target": "{{ p.1.dir }}", "type": "dir"
-          {% else %}
+          {% if p.0.dev != p.1.dev %}
           "source": "{{ p.0.dev }}", "target": "{{ p.1.dev }}", "type": "dev"
+          {% else %}
+          "source": "{{ p.0.dir }}", "target": "{{ p.1.dir }}", "type": "dir"
           {% endif %}
         }{{ '' if loop.last else ',' }}
         {% endfor %}

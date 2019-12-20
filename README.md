@@ -8,61 +8,45 @@ This role is a piece of (*yet another*) [Ansible Quick Starter](/aqs-common)
 
 ## Requirements
 
-LVM tools must be installed on hosts and a VG must already exist. Also, non-
-default FS tools must be installed apart to be able to use specific filesystem
-types.
+LVM tools must be installed on hosts and a VG must already exist. Also,
+non-default FS tools must be installed apart to be able to use these specific
+filesystem types. This role installs no package.
 
 ## Role Variables
 
-The main action the role is called for. Choices are `setup` (the default) and
-`unset`.
+The wanted state of the LV/FS the role is played for. Choices are `present` (the
+default), `absent` or `unmounted`.
 ```yaml
-filesystems__action: unset
+filesystems__state: absent
 ```
 
-A list of dictionnaries describing filsystems to setup or unset.
+A list of dictionaries describing filsystems to setup or unset.
 ```yaml
 filesystems__fslist:
-  - path:      MANDATORY - No default  - modules: mount, file
-    lv:        MANDATORY - No default  - modules: lvol (filesystem, mount)
-    vg:        Defaults to 'vg0'       - modules: lvol (filesystem, mount)
-    size:      Defaults to '512M'      - modules: lvol
-    fstype:    Defaults to 'ext4'      - modules: filesystem, mount
-    force:     No default - OMITTED    - modules: lvol, filesystem, file
-    resisefs:  No default - OMITTED    - modules: lvol, filesystem
-    lvol_opts: No default - OMITTED    - modules: lvol (=opts)
-    pvs:       No default - OMITTED    - modules: lvol
-    shrink:    No default - OMITTED    - modules: lvol
-    mkfs_opts: No default - OMITTED    - modules: filesystem (=opts)
-    backup:    No default - OMITTED    - modules: mount
-    dump:      No default - OMITTED    - modules: mount
-    mountopts: No default - OMITTED    - modules: mount (=opts)
-    passno:    No default - OMITTED    - modules: mount
-    attr:      No default - OMITTED    - modules: file
-    group:     No default - OMITTED    - modules: file
-    mode:      No default - OMITTED    - modules: file
-    owner:     No default - OMITTED    - modules: file
-    selevel:   No default - OMITTED    - modules: file
-    serole:    No default - OMITTED    - modules: file
-    setype:    No default - OMITTED    - modules: file
-    seuser:    No default - OMITTED    - modules: file
+  - path: /opt/foobar
+    lv: foobar_app
+  - path: /var/foobar/cache
+    size: 4G
+    lv: foobar_var
 ```
 
-The following keys, matching other modules parameters by their names, are not
-implemented here and, for almost all, are not applicable:
-```yaml
-    opts:      Not implemented - modules: lvol, filesystem, mount - CONFLICTS
-               See lvol_opts, mkfs_opts and mountopts.
-    dev:       Not implemented - modules: filesystem - built from 'vg' and 'lv'
-    src:       Not implemented - modules: mount      - built from 'vg' and 'lv'
-    state:     Not implemented - modules: lvol, mount, file - HARDCODED
-    active:    Not implemented - modules: lvol  - N/A
-    snapshot:  Not implemented - modules: lvol  - N/A
-    thinpool:  Not implemented - modules: lvol  - N/A
-    boot:      Not implemented - modules: mount - N/A
-    fstab:     Not implemented - modules: mount - N/A
-    recurse:   Not implemented - modules: file  - N/A
-```
+| Key | Mandatory | Default | Description |
+|:----|:---------:|:--------|:------------|
+| `path` | **always** | | Absolute path of the mountpoint |
+| `lv` | **always** | the one already mounted on `path`|Name of the Logical Volume |
+| `vg` | **always** | `vg0` | Name of the VG the LV belongs to |
+| `size` | *present* | `512M`| Size of the Logical Volume |
+| `fstype` | *present* | `ext4` | Filesystem type to mount on `path` |
+| `force` | no | `false` | Shortcut to force almost all operations - not recommended |
+| `force_mkfs` | no | same as `force` | Force `filesystem` module |
+| `force_kill` | no | same as `force` | Send SIGKILL (`true`) or SIGTERM (`false`) to processes accessing the FS |
+| `force_wipe` | no | same as `force` | Force wipefs command on mounted filesystems |
+| `force_lvol` | no | dynamically set | Force `lvol` module while creating/resizing the LV |
+| `resizefs` | no | dynamically set | Allow `lvol` module (not `filesystem`) to resize FS |
+| `shrink` | no | dynamically set | Allow `lvol` module to reduce the LV |
+
+Also, almost all parameters of the `file` module have a matching key to set
+access permissions at the root of the FS.
 
 The default values that can be used. Each `filesystems__list`'s dictionnary
 key that is not mandatory can be set this way for all filesystems, and can
@@ -81,29 +65,6 @@ filesystems__default_size: 512M
 The default filesystem type.
 ```yaml
 filesystems__default_fstype: ext4
-```
-
-Other default parameters that are not set by the role and so get the default
-values of the related modules.
-```yaml
-filesystems__default_force:     (no)
-filesystems__default_resisefs:  (no)
-filesystems__default_lvol_opts: ()
-filesystems__default_pvs:       ()
-filesystems__default_shrink:    (yes) needs force=yes to be applied
-filesystems__default_mkfs_opts: ()
-filesystems__default_backup:    (no)
-filesystems__default_mountopts: ()
-filesystems__default_dump:      (0)
-filesystems__default_passno:    (0)
-filesystems__default_attr:      ()
-filesystems__default_mode:      () results may depend on umask
-filesystems__default_group:     (root)
-filesystems__default_owner:     (root)
-filesystems__default_selevel:   (s0)
-filesystems__default_serole:    ()
-filesystems__default_setype:    ()
-filesystems__default_seuser:    ()
 ```
 
 The 3 following variables are set in `vars/main.yml` to not be overridden from
@@ -171,7 +132,7 @@ Setup two filesystems on JBoss servers, with both values specific to the fs
 - hosts: servers
   roles:
     - role: filesystems
-      filesystems__action: setup
+      filesystems__state: present
       filesystems__fslist:
         - path: "{{ jboss_app_dir_path }}"
           size: "{{ jboss_app_vol_size }}"
@@ -179,9 +140,9 @@ Setup two filesystems on JBoss servers, with both values specific to the fs
         - path: "{{ jboss_var_dir_path }}"
           size: "{{ jboss_var_vol_size }}"
           lv:   "{{ jboss_var_vol_name }}"
-      filesystems__mode: 0750
-      filesystems__owner: "webadm"
-      filesystems__group: "webgrp"
+      filesystems__default_mode: "0750"
+      filesystems__default_owner: "webadm"
+      filesystems__default_group: "webgrp"
 ```
 
 Unset servers:
@@ -189,7 +150,7 @@ Unset servers:
 - hosts: servers
   roles:
     - role: filesystems
-      filesystems__action: unset
+      filesystems__state: absent
       filesystems__fslist:
         - path: "{{ jboss_app_dir_path }}"
           lv:   "{{ jboss_app_vol_name }}"

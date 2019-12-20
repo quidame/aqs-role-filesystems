@@ -28,7 +28,9 @@ filesystems__behaviour: "serial"
 #
 # When set to True, this variable allows one to update paths of Logical Volumes
 # or their mountpoints if for an active mount, one (and only one) of the LV name
-# or directory path has changed in filesystems__fslist.
+# or directory path has changed in filesystems__fslist. This feature needs to
+# unmount the filesystem before renaming it or the mountpoint, so processes
+# accessing the fs must be stopped before.
 #
 filesystems__update_paths: True
 
@@ -40,3 +42,78 @@ filesystems__update_paths: True
 # before ending. Defaults to True.
 #
 filesystems__validate: True
+
+
+################################################################################
+## filesystems__units
+#
+# Dictionary of size units. Note that even if vgs, pvs and lvs commands make use
+# of case sensitive units (vg_extent_size = 4194304B = 4096.00k = 4.00m = 4.19M
+# = 4194.30K), lvcreate (called by ansible's lvol) and lvresize do not.
+#
+filesystems__units:
+  B: "{{ 1024 | pow(0) | int }}"
+  k: "{{ 1024 | pow(1) | int }}"
+  K: "{{ 1024 | pow(1) | int }}"
+  m: "{{ 1024 | pow(2) | int }}"
+  M: "{{ 1024 | pow(2) | int }}"
+  g: "{{ 1024 | pow(3) | int }}"
+  G: "{{ 1024 | pow(3) | int }}"
+  t: "{{ 1024 | pow(4) | int }}"
+  T: "{{ 1024 | pow(4) | int }}"
+
+
+#
+# Preset assertions here.
+#
+
+############################################################### FSTAB ASSERTIONS
+#
+fstab_assertions: |
+  [
+    {###  1. Check for obvious/simple duplicates
+    }#}
+    "( fstab_mountpoints | sort ) == ( fstab_mountpoints | sort | unique )",
+    "( fstab_filesystems | sort ) == ( fstab_filesystems | sort | unique )",
+
+    {###  2. Check for hidden duplicated directories
+            /foo/bar vs /foo/bar/
+    }#}
+    {% for x in fstab_mountpoints %}
+    "'{{ x }}' in fstab_mountpoints and not '{{ x }}/' in fstab_mountpoints",
+    {% endfor %}
+
+    {###  3. Check for hidden duplicated devices
+            /dev/VG/LV vs /dev/mapper/VG-LV
+            Assert that if /dev/mapper/VG-LV is in the list, /dev/VG/LV is
+            not.
+    }#}
+    {% for x in fstab_filesystems if x is match('/dev/mapper/') %}
+    {% set X = '/dev/%s' % ( x | basename | regex_replace( '([^-])-([^-])', '\\1/\\2' ) | regex_replace( '--', '-' ) ) %}
+    "'{{ x }}' in fstab_filesystems and not '{{ X }}' in fstab_filesystems",
+    {% endfor %}
+
+    {###  4. Check for unpredictable names
+            /dev/sdb2, /dev/dm-7, /dev/xvda3, ...
+            Unpredictable names are those of the block devices themselves,
+            in /dev. Symlinks to them (and with predictable names) are all
+            in subdirectories in /dev.
+    }#}
+    {% for x in fstab_devicelinks %}
+    "'{{ x }}' is not match('/dev/[^/]+$')",
+    {% endfor %}
+
+    {###  5. Check for bad filesystem types
+            This will verify that a fstype recorded in fstab matches the one
+            in ansible_mounts for the same mountpoint. Since it is based on
+            ansible_mounts, fstab entries that are not currently mounted are
+            not checked. They will be in a next task by performing a real
+            mount call. This test about fstype is done here because mount
+            command will not raise an error with '-o remount'. So this piece
+            of code and the mount of inactive mountpoints are complementary.
+    }#}
+    {% for x in fstab_dicts | product(ansible_mounts) if x.1.mount == x.0.mount | regex_replace('/+$', '') %}
+    "'{{ x.1.mount }}' == '{{ x.0.mount | regex_replace('/+$', '') }}' and \
+     '{{ x.1.fstype }}' == '{{ x.0.fstype }}'"{{ '' if loop.last else ',' }}
+    {% endfor %}
+  ]

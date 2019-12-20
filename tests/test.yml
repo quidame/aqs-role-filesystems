@@ -2,7 +2,7 @@
 - hosts: tests
   roles:
     - role: filesystems
-      filesystems__action: setup
+      filesystems__state: present
 
     - role: filesystems
-      filesystems__action: unset
+      filesystems__state: absent
