@@ -34,6 +34,25 @@
 
 
 ################################################################################
+## filesystems__normalize
+#
+# The file /etc/fstab is canonicalized regarding devices and directories paths,
+# trailing spaces before EOL, etc. It is done only for lines matching a marker
+# that is itself a regular expression.
+#
+# - This will normalize all:
+#   filesystems__normalize: ""
+#
+# - This will normalize only lines matching string 'vg0':
+#   filesystems__normalize: "vg0"
+#
+# - This will normalize nothing:
+#   filesystems__normalize: "{{ omit }}"
+#
+filesystems__normalize: "{{ omit }}"
+
+
+################################################################################
 ## filesystems__fslist
 #
 # Define the list of filesystems to setup through a list of dictionnaries, with
