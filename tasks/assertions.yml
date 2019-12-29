@@ -1,6 +1,6 @@
 ---
 # role: filesystems
-# file: tasks/checkpoint.yml
+# file: tasks/assertions.yml
 
 
 # This is intended to prevent late errors by catching common cases of failure.

@@ -19,7 +19,7 @@
 # as soon as possible in case one of the conditions (OS compatibility or type,
 # format or value of mandatory variables) are unmet.
 #
-- import_tasks: checkpoint.yml
+- import_tasks: assertions.yml
 
 
 ################################################################################
