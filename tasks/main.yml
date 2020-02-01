@@ -19,7 +19,7 @@
 # as soon as possible in case one of the conditions (OS compatibility or type,
 # format or value of mandatory variables) are unmet.
 #
-- import_tasks: checkpoint.yml
+- import_tasks: assertions.yml
 
 
 ################################################################################
@@ -33,7 +33,6 @@
 #   device !
 #
 - import_tasks: normalize-fstab.yml
-  check_mode: true
 
 
 ################################################################################
@@ -54,11 +53,21 @@
   changed_when: false
   check_mode: false
 
-- name: "get relevant info about mounted devices"
+- name: "get relevant info about mounted devices with 'lsblk'"
   command: lsblk --output fstype,mountpoint,path --json
   register: filesystems__lsblk_command
   changed_when: false
   check_mode: false
+
+
+################################################################################
+# CHECK TOPOLOGY
+#
+# Check whether the wanted topology is reachable or not. Cases of error are
+# inconsistencies in the directories mount order, as when a directory is mounted
+# over an active mount on its subdirectory.
+#
+- import_tasks: check-mount-orders.yml
 
 
 

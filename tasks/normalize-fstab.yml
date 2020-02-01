@@ -21,16 +21,25 @@
 - name: "canonicalize paths in /etc/fstab to avoid duplicates"
   replace:
     path: /etc/fstab
-    regexp: '{{ fstab_item.regexp }}'
+    regexp: '(?:(?=.*{{ filesystems__normalize }}){{ fstab_item.regexp }})'
     replace: '{{ fstab_item.replace }}'
   loop:
     # Use single quotes to not have to escape the baslashes themselves.
-    - { regexp: '(/\.?|(/\.?)*/[a-zA-Z0-9][^/\s]*[a-zA-Z0-9](/\.?)*/\.\.(/\.?)*)+/', replace: '/' }
-    - { regexp: '([^\s])/\.?(\s)', replace: '\1\2' }
-    - { regexp: '^/dev/([^-/\s]+)/([^-/\s]+\s)', replace: '/dev/mapper/\1-\2' }
-    - { regexp: '[ \t]+$', replace: '' }
+    - label: "canonicalize paths by logically shortening '//' '/.' and '/..')"
+      regexp: '(/\.?|(/\.?)*/[a-zA-Z0-9][^/\s]*[a-zA-Z0-9](/\.?)*/\.\.(/\.?)*)+/'
+      replace: '/'
+    - label: "canonicalize paths by removing trailing slashes"
+      regexp: '([^\s])/\.?(\s)'
+      replace: '\1\2'
+    - label: "canonicalize paths by converting LVM names to device-mapper"
+      regexp: '^/dev/([^-/\s]+)/([^-/\s]+\s)'
+      replace: '/dev/mapper/\1-\2'
+    - label: "remove trailing spaces"
+      regexp: '(.*[^ \t])[ \t]+$'
+      replace: '\1'
   loop_control:
     loop_var: fstab_item
+    label: "{{ fstab_item.label }}"
   diff: true
   # By the way, the main reason we notify this handler is not to verify the
   # result of this task, but because we have fixed a non-standard syntax,

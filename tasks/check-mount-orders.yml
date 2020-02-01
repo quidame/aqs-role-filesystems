@@ -1,0 +1,127 @@
+---
+# role: filesystems
+# file: tasks/check-mount-orders.yml
+
+
+# There is probably no chance to cleanly setup a new mountpoint if an
+# existing one would be a subdirectory of the new one, i.e. if nested
+# mounts are not set in the proper order.
+# For example:
+#   /var/projects/apa_nna/apache_2.4 is an active mountpoint
+#   /var/projects is to be set as a mountpoint
+# In this example, the mount on /var/projects will hide the one that
+# is already set on /var/projects/apa_nna/apache_2.4, and this is not
+# what we want !
+#
+# Other example:
+#   /var/projects/apa_nna/apache_2.4 is an hidden mountpoint
+#   /var/projects is the active mountpoint hiding the previous
+# The only one thing we are able to do is to unmount or remove the
+# hiding mountpoint to free the hidden one. Do not ever try to unset
+# the hidden mount at the same time, since the role will sort them in
+# reverse order for unmount operations.
+#
+# This piece of code is aware of that, and takes care to:
+#   - not fail if the wanted mount is active and role's state=present,
+#     unless this active mount is hidding another one.
+#   - not fail if the mount is not set and role's state=absent/unmounted
+#   - not fail if the mount is set, role's state=absent and submounts
+#     are listed to be unset too, unless they're already mounted and
+#     hidden by the mount to unset. Yes.
+
+
+- name: "get directories mount order with 'findmnt'"
+  command: findmnt --df --noheadings --notruncate --output target
+  register: filesystems__findmnt_command
+  changed_when: false
+  check_mode: false
+
+
+- name: "validate requested state is reachable regarding possible troubles with nested or hidden mounts"
+  assert:
+    that:
+      - fs_hidden_by == []
+      - ( fs_submounts == [] ) or
+        ( filesystems__state in ['present'] and fs_ismounted | bool and fs_subhidden == [] ) or
+        ( filesystems__state in ['absent','unmounted'] and not fs_ismounted | bool ) or
+        ( filesystems__state in ['absent','unmounted'] and
+          fs_subnested | difference(fs_subwanted) == [] and
+          fs_subhidden | difference(fs_subwanted) == fs_subhidden )
+    quiet: yes
+    fail_msg: "You attempt to
+      {{ 'enable' if filesystems__state == 'present' else 'disable' }}
+      a mountpoint on {{ fs_canonical }}, but it seems there is some
+      trouble with that.
+
+      {%- if fs_hidden_by != [] %}
+      {{ fs_canonical }} is currently mounted but hidden by a mount over
+      {{ fs_hidden_by | join(' and ') }}. Absolutely nothing can be done or
+      undone with {{ fs_canonical }} while it's still overmounted. Please
+      unmount {{ fs_hidden_by | join(' and ') }} before moving forward.
+
+      {%- elif filesystems__state in ['present'] and fs_ismounted | bool %}
+      {{ fs_subhidden | join(' and ') }}
+      {{ 'are' if fs_subhidden | length > 1 else 'is' }} currently mounted
+      but hidden by the mount over {{ fs_canonical }}. Please unmount
+      {{ fs_canonical }} before moving forward.
+
+      {%- elif filesystems__state in ['present'] %}
+      Mounting a filesystem on {{ fs_canonical }} would hide currently
+      active mount {{ fs_submounts | join(' and ') }}. Nobody wants this.
+      Please unmount {{ fs_submounts | join(' and ') }} before moving
+      forward.
+
+      {%- else %}
+      {%- if fs_subnested | difference(fs_subwanted) != [] %}
+      {{ fs_subnested | difference(fs_subwanted) | join(' and ') }} is a
+      nested mountpoint that needs to be unmounted either before or in
+      the same move than {{ fs_canonical }}. Please unmount
+      {{ fs_subnested | join(' and ') }} before moving forward.
+      {%- endif %}
+      {%- if fs_subhidden | difference(fs_subwanted) != fs_subhidden %}
+      {{ fs_subhidden | intersect(fs_subwanted) | join(' and ') }} is
+      currently mounted and hidden by the mount on {{ fs_canonical }},
+      and can't be disabled in the same move. Please unmount
+      {{ fs_canonical }} before moving forward.
+      {%- endif %}
+      {%- endif %}"
+
+  loop: "{{ filesystems__fslist }}"
+  loop_control:
+    loop_var: _fs_item
+    label:
+      path: "{{ _fs_item.path }}"
+
+  vars:
+    actual_mounts: "{{ filesystems__findmnt_command.stdout_lines | intersect(ansible_mounts | json_query('[*].mount')) }}"
+    wanted_mounts: |
+      [ {% for x in filesystems__fslist %}"{{ x.path | regex_replace('/+', '/') | regex_replace('/$', '') }}",{% endfor %} ]
+    # Canonical path of the mountpoint
+    fs_canonical: "{{ _fs_item.path | regex_replace('/+', '/') | regex_replace('/$', '') }}"
+    # If it is mounted or not
+    fs_ismounted: "{{ fs_canonical in actual_mounts }}"
+    # The mounts wanted by the user (to be set or unset or unmounted)
+    fs_subwanted: "{{ wanted_mounts | select('search', '^%s/.*' % fs_canonical) | list }}"
+    # Submounts (nested + hidden) of current FS
+    fs_submounts: "{{ actual_mounts | select('search', '^%s/.*' % fs_canonical) | list }}"
+    # Nested mounts (submounts that are at the right place) of current FS
+    fs_subnested: |
+      [
+        {% for x in actual_mounts %}{% set i = loop.index - 1 %}{% if x == fs_canonical %}
+        {% for m in actual_mounts[i:] if m is match('%s/' % x) %}
+        "{{ m }}",{% endfor %}{% endif %}{% endfor %}
+      ]
+    # Hidden mounts (submounts that are at the wrong place) of current FS
+    fs_subhidden: |
+      [
+        {% for x in actual_mounts %}{% set i = loop.index - 1 %}{% if x == fs_canonical %}
+        {% for m in actual_mounts[:i] if m is match('%s/' % x) %}
+        "{{ m }}",{% endfor %}{% endif %}{% endfor %}
+      ]
+    # The parent mount that became an overmount and hides the current mount (hopefully none)
+    fs_hidden_by: |
+      [
+        {% for x in actual_mounts %}{% set i = loop.index - 1 %}{% if x == fs_canonical %}
+        {% for m in actual_mounts[i:] if x is match('%s/' % m) %}
+        "{{ m }}",{% endfor %}{% endif %}{% endfor %}
+      ]
