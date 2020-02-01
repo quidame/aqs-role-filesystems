@@ -35,6 +35,7 @@
     - name: "track duplicates, unpredictable names and bad fstypes in /etc/fstab"
       assert:
         that: "{{ fstab_assertions_for_python2 | d(fstab_assertions) }}"
+        quiet: yes
 
 
     - name: "check that devices and mountpoints recorded in /etc/fstab exist"

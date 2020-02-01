@@ -54,7 +54,7 @@
     __tempvar2__: |
       [
         {% for p in __tempvar0__ | product(__tempvar1__) if
-          p.0 != p.1 and p.0.fstype == p.1.fstype and ( p.0.dir == p.1.dir or p.0.dev == p.1.dev ) %}{
+          p.0 != p.1 and p.0.fstype == p.1.fstype and p.0.dir != "" and ( p.0.dir == p.1.dir or p.0.dev == p.1.dev ) %}{
           "fstype": "{{ p.0.fstype }}",
           "new": { "dev": "{{ p.1.dev }}", "dir": "{{ p.1.dir }}" },
           "old": { "dev": "{{ p.0.dev }}", "dir": "{{ p.0.dir }}" },
