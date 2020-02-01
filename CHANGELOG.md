@@ -1,6 +1,6 @@
 # filesystems
 
-## 1.0.1
+## [1.0.1] 2020-02-01
 
 * fix: rely on findmnt command instead of ansible_mounts facts
 * use findmnt to get the current mount order
