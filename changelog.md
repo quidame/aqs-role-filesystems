@@ -1,5 +1,12 @@
 # filesystems
 
+## 1.0.1
+
+* fix: rely on findmnt command instead of ansible_mounts facts
+* use findmnt to get the current mount order
+* move assertions about nested/hidden mounts into a dedicated tasks file
+* bump min ansible version to >= 2.8, so use `quiet` for assert tasks
+
 ## 0.3.0
 
 * Refactor `serial` and `sequential` to simplify the code (remove `action.yml`,
