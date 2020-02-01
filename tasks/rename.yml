@@ -71,6 +71,7 @@
           | select('search', '^%s/' % _fs_item.old.dir)
           | list | sort
         )
+    quiet: yes
     fail_msg: "You attempt to {{ 'rename device' if _fs_item.type == 'dev' else 'move location of' }} \
       {{ _fs_item.source }} to {{ _fs_item.target }}. {{ _fs_item.old.dir }} needs to be unmounted \
       to free {{ 'it' if _fs_item.type == 'dir' else 'its device %s' % _fs_item.source }} for renaming. \
@@ -108,6 +109,7 @@
       - _fs_item.target not in ansible_mounts | json_query('[*].mount')
       - not _fs_rename_stat_.results[_fs_index].stat.exists or
         ( _fs_rename_stat_.results[_fs_index].stat.isdir and _fs_rename_stat_.results[_fs_index].stat.nlink == 2 )
+    quiet: yes
     fail_msg: "You attempt to move location of {{ _fs_item.source }} to {{ _fs_item.target }}, which \
       {{ 'is already an active mountpoint' if _fs_item.target in ansible_mounts | json_query('[*].mount')
       else 'is not an empty directory' }}. Maybe something is wrong with your setup, or something needs \
